@@ -25,7 +25,6 @@ public static class ServiceCollectionExtensions
 
         services.Configure(configure);
         services.AddTelemetryForgeCore(options);
-        services.AddSingleton<IpHashingService>();
         services.AddHttpContextAccessor();
         services.AddScoped<TelemetryForgeCircuitHandler>();
         services.AddScoped<CircuitHandler>(sp => sp.GetRequiredService<TelemetryForgeCircuitHandler>());

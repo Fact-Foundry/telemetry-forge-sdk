@@ -1,5 +1,4 @@
 using FactFoundry.TelemetryForge.Core;
-using FactFoundry.TelemetryForge.Core.Models;
 using FactFoundry.TelemetryForge.Web.Models;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.Http;
@@ -16,13 +15,12 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler
 {
     private readonly ITelemetryClient _client;
     private readonly IHttpContextAccessor _httpContextAccessor;
-    private readonly IpHashingService _ipHashingService;
     private readonly WebTelemetryOptions _options;
     private readonly ILogger<TelemetryForgeCircuitHandler> _logger;
 
     private DateTimeOffset _sessionStart;
-    private string _ipHash = string.Empty;
-    private string? _gaHash;
+    private string _ipAddress = string.Empty;
+    private string? _gaValue;
     private string _userAgent = string.Empty;
     private string? _referrer;
     private string _language = string.Empty;
@@ -34,13 +32,11 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler
     public TelemetryForgeCircuitHandler(
         ITelemetryClient client,
         IHttpContextAccessor httpContextAccessor,
-        IpHashingService ipHashingService,
         IOptions<WebTelemetryOptions> options,
         ILogger<TelemetryForgeCircuitHandler> logger)
     {
         _client = client;
         _httpContextAccessor = httpContextAccessor;
-        _ipHashingService = ipHashingService;
         _options = options.Value;
         _logger = logger;
     }
@@ -52,8 +48,7 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler
         var context = _httpContextAccessor.HttpContext;
         if (context is not null)
         {
-            var ip = GetClientIp(context);
-            _ipHash = _ipHashingService.HashForSession(ip);
+            _ipAddress = GetClientIp(context);
             _userAgent = context.Request.Headers.UserAgent.ToString();
             _referrer = context.Request.Headers.Referer.ToString() is { Length: > 0 } r ? r : null;
             _language = context.Request.Headers.AcceptLanguage.ToString();
@@ -63,7 +58,7 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler
                 && context.Request.Cookies.TryGetValue("_ga", out var gaValue)
                 && !string.IsNullOrEmpty(gaValue))
             {
-                _gaHash = HashingService.Hash(gaValue);
+                _gaValue = gaValue;
             }
 
             var path = context.Request.Path.Value ?? "/";
@@ -112,8 +107,8 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler
             SessionStart = _sessionStart,
             SessionEnd = sessionEnd,
             DurationMs = (long)(sessionEnd - _sessionStart).TotalMilliseconds,
-            IpHash = _ipHash,
-            GaHash = _gaHash,
+            IpAddress = _ipAddress,
+            GaValue = _gaValue,
             UserAgent = _userAgent,
             Referrer = _referrer,
             Language = _language,

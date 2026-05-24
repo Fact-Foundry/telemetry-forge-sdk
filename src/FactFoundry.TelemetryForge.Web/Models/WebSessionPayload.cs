@@ -19,11 +19,11 @@ public sealed class WebSessionPayload
     [JsonPropertyName("duration_ms")]
     public required long DurationMs { get; init; }
 
-    [JsonPropertyName("ip_hash")]
-    public required string IpHash { get; init; }
+    [JsonPropertyName("ip_address")]
+    public required string IpAddress { get; init; }
 
-    [JsonPropertyName("ga_hash")]
-    public string? GaHash { get; init; }
+    [JsonPropertyName("ga_value")]
+    public string? GaValue { get; init; }
 
     [JsonPropertyName("user_agent")]
     public required string UserAgent { get; init; }

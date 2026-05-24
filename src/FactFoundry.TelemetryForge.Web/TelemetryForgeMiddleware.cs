@@ -17,20 +17,17 @@ public sealed class TelemetryForgeMiddleware
     private readonly RequestDelegate _next;
     private readonly ITelemetryClient _client;
     private readonly WebTelemetryOptions _options;
-    private readonly IpHashingService _ipHashingService;
     private readonly ILogger<TelemetryForgeMiddleware> _logger;
 
     public TelemetryForgeMiddleware(
         RequestDelegate next,
         ITelemetryClient client,
         IOptions<WebTelemetryOptions> options,
-        IpHashingService ipHashingService,
         ILogger<TelemetryForgeMiddleware> logger)
     {
         _next = next;
         _client = client;
         _options = options.Value;
-        _ipHashingService = ipHashingService;
         _logger = logger;
     }
 
@@ -52,7 +49,6 @@ public sealed class TelemetryForgeMiddleware
 
         try
         {
-            var ip = GetClientIp(context);
             var path = context.Request.Path.Value ?? "/";
 
             var payload = new WebSessionPayload
@@ -61,8 +57,8 @@ public sealed class TelemetryForgeMiddleware
                 SessionStart = sessionStart,
                 SessionEnd = sessionEnd,
                 DurationMs = stopwatch.ElapsedMilliseconds,
-                IpHash = _ipHashingService.HashForSession(ip),
-                GaHash = GetGaHash(context),
+                IpAddress = GetClientIp(context),
+                GaValue = GetGaValue(context),
                 UserAgent = context.Request.Headers.UserAgent.ToString(),
                 Referrer = context.Request.Headers.Referer.ToString() is { Length: > 0 } r ? r : null,
                 Language = context.Request.Headers.AcceptLanguage.ToString(),
@@ -113,13 +109,13 @@ public sealed class TelemetryForgeMiddleware
         return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
     }
 
-    private string? GetGaHash(HttpContext context)
+    private string? GetGaValue(HttpContext context)
     {
         if (!_options.UseGaCookie)
             return null;
 
         if (context.Request.Cookies.TryGetValue("_ga", out var gaValue) && !string.IsNullOrEmpty(gaValue))
-            return HashingService.Hash(gaValue);
+            return gaValue;
 
         return null;
     }
