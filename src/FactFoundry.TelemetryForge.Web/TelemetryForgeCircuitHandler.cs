@@ -1,4 +1,3 @@
-using FactFoundry.TelemetryForge.Core;
 using FactFoundry.TelemetryForge.Web.Models;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.Http;

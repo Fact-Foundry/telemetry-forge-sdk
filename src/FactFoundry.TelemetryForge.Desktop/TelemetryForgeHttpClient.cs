@@ -1,7 +1,7 @@
 using System.Net.Http.Json;
 using Microsoft.Extensions.Logging;
 
-namespace FactFoundry.TelemetryForge.Core;
+namespace FactFoundry.TelemetryForge.Desktop;
 
 /// <summary>
 /// HTTP client that posts telemetry payloads to a TelemetryForge Server instance.

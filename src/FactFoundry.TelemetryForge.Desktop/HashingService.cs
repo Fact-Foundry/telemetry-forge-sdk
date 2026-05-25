@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace FactFoundry.TelemetryForge.Core;
+namespace FactFoundry.TelemetryForge.Desktop;
 
 /// <summary>
 /// Provides SHA-256 hashing utilities for identity resolution.

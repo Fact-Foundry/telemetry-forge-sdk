@@ -1,6 +1,6 @@
-using FactFoundry.TelemetryForge.Core;
+using FactFoundry.TelemetryForge.Desktop;
 
-namespace FactFoundry.TelemetryForge.Tests.Core;
+namespace FactFoundry.TelemetryForge.Tests.Desktop;
 
 public class HashingServiceTests
 {

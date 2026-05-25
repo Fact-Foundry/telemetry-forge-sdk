@@ -1,4 +1,4 @@
-namespace FactFoundry.TelemetryForge.Core;
+namespace FactFoundry.TelemetryForge.Desktop;
 
 /// <summary>
 /// Sends telemetry payloads to a TelemetryForge Server instance.
@@ -10,7 +10,7 @@ public interface ITelemetryClient
     /// Failures are logged and swallowed — this method never throws.
     /// </summary>
     /// <typeparam name="T">The payload type to serialize as JSON.</typeparam>
-    /// <param name="path">The API path (e.g., "/api/telemetry/web").</param>
+    /// <param name="path">The API path (e.g., "/api/telemetry/desktop").</param>
     /// <param name="payload">The payload object.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task SendAsync<T>(string path, T payload, CancellationToken cancellationToken = default);

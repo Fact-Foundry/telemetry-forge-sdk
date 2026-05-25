@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
-using FactFoundry.TelemetryForge.Core;
 using Microsoft.Extensions.Logging;
 
 namespace FactFoundry.TelemetryForge.Desktop;

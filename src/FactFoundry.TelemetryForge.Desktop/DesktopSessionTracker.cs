@@ -1,6 +1,4 @@
 using System.Reflection;
-using FactFoundry.TelemetryForge.Core;
-using FactFoundry.TelemetryForge.Core.Models;
 using FactFoundry.TelemetryForge.Desktop.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

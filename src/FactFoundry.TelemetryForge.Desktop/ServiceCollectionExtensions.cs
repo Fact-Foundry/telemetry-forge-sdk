@@ -1,5 +1,5 @@
-using FactFoundry.TelemetryForge.Core;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http.Resilience;
 
 namespace FactFoundry.TelemetryForge.Desktop;
 
@@ -22,7 +22,14 @@ public static class ServiceCollectionExtensions
         configure(options);
 
         services.Configure(configure);
-        services.AddTelemetryForgeCore(options);
+
+        services.AddHttpClient<ITelemetryClient, TelemetryForgeHttpClient>(client =>
+        {
+            client.BaseAddress = new Uri(options.Endpoint.TrimEnd('/'));
+            client.DefaultRequestHeaders.Add("X-TelemetryForge-Key", options.ApiKey);
+        })
+        .AddStandardResilienceHandler();
+
         services.AddSingleton<IMachineFingerprint, MachineFingerprint>();
         services.AddSingleton<DesktopSessionTracker>();
         services.AddSingleton<IFeatureTracker>(sp => sp.GetRequiredService<DesktopSessionTracker>());

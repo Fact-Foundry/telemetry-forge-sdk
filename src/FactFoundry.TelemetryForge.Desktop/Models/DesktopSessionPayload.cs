@@ -1,5 +1,4 @@
 using System.Text.Json.Serialization;
-using FactFoundry.TelemetryForge.Core.Models;
 
 namespace FactFoundry.TelemetryForge.Desktop.Models;
 
