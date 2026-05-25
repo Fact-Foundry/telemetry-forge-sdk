@@ -136,7 +136,6 @@
                     <div><span style="color: #7c3aed;">Referrer:</span> @(_webReferrer ?? "(direct)")</div>
                     <div><span style="color: #7c3aed;">User-Agent:</span> <span style="word-break: break-all;">@_webUserAgent</span></div>
                     <div><span style="color: #7c3aed;">Language:</span> @_webLanguage</div>
-                    <div><span style="color: #7c3aed;">DNT:</span> @(_webDnt ? "1 (active)" : "0 (inactive)")</div>
                     <div><span style="color: #7c3aed;">IP:</span> @_webIp</div>
                 </div>
             </div>
@@ -227,8 +226,8 @@
     private string _webUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36";
     private string? _webReferrer = "https://google.com/search?q=your+product";
     private string _webLanguage = "en-US";
-    private bool _webDnt;
     private string _webIp = "73.162.44.12";
+    private string _webSessionId = string.Empty;
     private string? _webPayloadJson;
     private string _webPersona = "human";
 
@@ -353,6 +352,7 @@
         _webServiceProvider = services.BuildServiceProvider();
         _webClient = _webServiceProvider.GetRequiredService<ITelemetryClient>();
         _webSessionStart = DateTimeOffset.UtcNow;
+        _webSessionId = Guid.NewGuid().ToString();
         _webPagePath.Clear();
         _webPayloadJson = null;
 
@@ -368,6 +368,7 @@
         {
             var payload = new WebEventPayload
             {
+                SessionId = _webSessionId,
                 EventType = "page_view",
                 Platform = "blazor-server",
                 Timestamp = DateTimeOffset.UtcNow,
@@ -376,8 +377,7 @@
                 Referrer = _webReferrer,
                 Language = _webLanguage,
                 PagePath = path,
-                StatusCode = 200,
-                Dnt = _webDnt
+                StatusCode = 200
             };
 
             try
@@ -404,6 +404,7 @@
         var lastPage = _webPagePath[^1];
         var payload = new WebEventPayload
         {
+            SessionId = _webSessionId,
             EventType = "circuit_close",
             Platform = "blazor-server",
             Timestamp = DateTimeOffset.UtcNow,
@@ -411,8 +412,7 @@
             UserAgent = _webUserAgent,
             Referrer = _webReferrer,
             Language = _webLanguage,
-            PagePath = lastPage,
-            Dnt = _webDnt
+            PagePath = lastPage
         };
 
         _webPayloadJson = JsonSerializer.Serialize(payload, JsonOptions);

@@ -19,12 +19,14 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler, ITelemetryFor
     private readonly WebTelemetryOptions _options;
     private readonly ILogger<TelemetryForgeCircuitHandler> _logger;
 
+    private readonly string _sessionId = Guid.NewGuid().ToString();
     private string _ipAddress = string.Empty;
     private string? _gaValue;
     private string _userAgent = string.Empty;
     private string? _referrer;
     private string _language = string.Empty;
-    private bool _dnt;
+    private string? _country;
+    private string? _region;
     private string _lastPagePath = "/";
 
     public TelemetryForgeCircuitHandler(
@@ -48,7 +50,7 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler, ITelemetryFor
             _userAgent = context.Request.Headers.UserAgent.ToString();
             _referrer = context.Request.Headers.Referer.ToString() is { Length: > 0 } r ? r : null;
             _language = context.Request.Headers.AcceptLanguage.ToString();
-            _dnt = context.Request.Headers["DNT"].ToString() == "1";
+            (_country, _region) = GeoHeaderResolver.Resolve(context, _options.GeoProvider);
 
             if (_options.UseGaCookie
                 && context.Request.Cookies.TryGetValue("_ga", out var gaValue)
@@ -60,10 +62,7 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler, ITelemetryFor
             _lastPagePath = context.Request.Path.Value ?? "/";
         }
 
-        if (!(_options.RespectDnt && _dnt))
-        {
-            _ = SendEventAsync("page_view", _lastPagePath);
-        }
+        _ = SendEventAsync("page_view", _lastPagePath);
 
         return Task.CompletedTask;
     }
@@ -75,29 +74,18 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler, ITelemetryFor
     public void TrackNavigation(string path)
     {
         _lastPagePath = path;
-
-        if (_options.RespectDnt && _dnt)
-            return;
-
         _ = SendEventAsync("page_view", path);
     }
 
     /// <inheritdoc />
     public void TrackEvent(string eventName, Dictionary<string, object>? data = null)
     {
-        if (_options.RespectDnt && _dnt)
-            return;
-
         _ = SendEventAsync("custom", _lastPagePath, eventName, data);
     }
 
     public override async Task OnCircuitClosedAsync(Circuit circuit, CancellationToken cancellationToken)
     {
-        if (_options.RespectDnt && _dnt)
-            return;
-
         await SendEventAsync("circuit_close", _lastPagePath, cancellationToken: cancellationToken);
-
         _logger.LogDebug("Blazor circuit close event sent for {Path}", _lastPagePath);
     }
 
@@ -112,6 +100,7 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler, ITelemetryFor
         {
             var payload = new WebEventPayload
             {
+                SessionId = _sessionId,
                 EventType = eventType,
                 Platform = "blazor-server",
                 Timestamp = DateTimeOffset.UtcNow,
@@ -121,7 +110,8 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler, ITelemetryFor
                 Referrer = _referrer,
                 Language = _language,
                 PagePath = pagePath,
-                Dnt = _dnt,
+                Country = _country,
+                Region = _region,
                 EventName = eventName,
                 EventData = eventData
             };

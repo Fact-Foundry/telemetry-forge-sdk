@@ -105,7 +105,6 @@ public sealed class DesktopSessionTracker : IFeatureTracker, IAsyncDisposable, I
             Platform = _fingerprint.GetPlatform(),
             OsVersion = Environment.OSVersion.ToString(),
             FingerprintHash = _fingerprint.GetFingerprintHash(),
-            LicenseJwt = _options.LicenseJwt,
             SessionStart = _sessionStart,
             SessionEnd = sessionEnd,
             DurationMs = (long)(sessionEnd - _sessionStart).TotalMilliseconds,
