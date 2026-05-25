@@ -1,6 +1,6 @@
 # TelemetryForge SDK
 
-Client NuGet packages for [TelemetryForge](https://github.com/FactFoundry/telemetry-forge) — lightweight, stateless libraries that send telemetry data from your .NET applications to a TelemetryForge Server instance.
+Client NuGet packages for [TelemetryForge](https://github.com/Fact-Foundry/telemetry-forge) — lightweight, stateless libraries that send telemetry data from your .NET applications to a TelemetryForge Server instance.
 
 ## Packages
 
@@ -60,7 +60,7 @@ Open the URL shown in the terminal (typically `http://localhost:5000`), enter yo
 ## Requirements
 
 - .NET 8, 9, or 10
-- A running [TelemetryForge Server](https://github.com/FactFoundry/telemetry-forge) instance
+- A running [TelemetryForge Server](https://github.com/Fact-Foundry/telemetry-forge) instance
 
 ## License
 
