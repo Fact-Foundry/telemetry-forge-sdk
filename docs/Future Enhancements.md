@@ -4,4 +4,30 @@ Items listed here are planned but deferred from the initial implementation. Remo
 
 ## Packages
 
-- **FactFoundry.TelemetryForge.Mobile** — MAUI mobile app telemetry package (iOS/Android). Spec is complete in the architecture document but lower priority than Web and Desktop packages.
+- **FactFoundry.TelemetryForge.Mobile** — MAUI mobile app telemetry package (iOS/Android). Spec is complete in the SDK design document but lower priority than Web and Desktop packages.
+
+## Server Compatibility (v2 Ingestion API)
+
+The TelemetryForge Server has moved from session-level payloads to per-request web events and heartbeat-based desktop/mobile sessions. The SDK packages need the following changes to be compatible with the current server version.
+
+### Web Package
+
+- **Per-request events** — replace `WebSessionPayload` with `WebEventPayload`. The middleware should post one event per request (`event_type=page_view`) instead of accumulating a session payload. The circuit handler should post a `page_view` event on each navigation instead of flushing at circuit close
+- **IP hashing** — switch from sending raw `ip_address` to sending `ip_hash` (SHA-256 with daily-rotating salt) and `ga_hash` (SHA-256 of `_ga` cookie value). The server now expects pre-hashed values
+- **Custom events** — add a public API (e.g., `ITelemetryForge.TrackEvent(string eventName, Dictionary<string, object>? data)`) that posts `event_type=custom` events to the server
+- **Circuit close signal** — when a Blazor circuit closes, optionally send a `circuit_close` event so the server can calculate last-page duration
+- **Link click tracking (Blazor only, opt-in)** — JS interop to capture anchor clicks and send `link_click` events with `target_url`
+
+### Desktop Package
+
+- **Session ID** — generate a client-side UUID (`session_id`) per app session, included in every payload
+- **Sequence counter** — monotonically increasing `sequence` field (0 for first send, incremented each heartbeat)
+- **Heartbeat timer** — periodically flush feature/error deltas to the server on a configurable interval (e.g., every 15-30 minutes) instead of only flushing at shutdown. Send only new entries since the last heartbeat
+- **Configuration** — add `HeartbeatIntervalMinutes` to `DesktopTelemetryOptions`
+
+### Mobile Package
+
+When implemented, the mobile package should include heartbeat support from the start:
+- `session_id` + `sequence` fields
+- Configurable heartbeat interval
+- `device_hash_type` field indicating identifier source (`vendor_id`, `android_id`, `generated_guid`)
