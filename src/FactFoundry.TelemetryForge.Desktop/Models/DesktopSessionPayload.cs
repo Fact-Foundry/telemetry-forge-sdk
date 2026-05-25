@@ -26,9 +26,6 @@ public sealed class DesktopSessionPayload
     [JsonPropertyName("fingerprint_hash")]
     public required string FingerprintHash { get; init; }
 
-    [JsonPropertyName("license_jwt")]
-    public string? LicenseJwt { get; init; }
-
     [JsonPropertyName("session_start")]
     public required DateTimeOffset SessionStart { get; init; }
 

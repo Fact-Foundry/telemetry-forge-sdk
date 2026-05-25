@@ -45,8 +45,11 @@ public sealed class TelemetryForgeMiddleware
 
         try
         {
+            var (country, region) = GeoHeaderResolver.Resolve(context, _options.GeoProvider);
+
             var payload = new WebEventPayload
             {
+                SessionId = Guid.NewGuid().ToString(),
                 EventType = "page_view",
                 Platform = "aspnet",
                 Timestamp = DateTimeOffset.UtcNow,
@@ -55,10 +58,14 @@ public sealed class TelemetryForgeMiddleware
                 UserAgent = context.Request.Headers.UserAgent.ToString(),
                 Referrer = context.Request.Headers.Referer.ToString() is { Length: > 0 } r ? r : null,
                 Language = context.Request.Headers.AcceptLanguage.ToString(),
+                SecChUa = context.Request.Headers["Sec-CH-UA"].ToString() is { Length: > 0 } ch ? ch : null,
+                SecChUaMobile = context.Request.Headers["Sec-CH-UA-Mobile"].ToString() is { Length: > 0 } chm ? chm : null,
+                SecChUaPlatform = context.Request.Headers["Sec-CH-UA-Platform"].ToString() is { Length: > 0 } chp ? chp : null,
                 PagePath = context.Request.Path.Value ?? "/",
                 StatusCode = context.Response.StatusCode,
                 DurationMs = stopwatch.ElapsedMilliseconds,
-                Dnt = HasDnt(context)
+                Country = country,
+                Region = region
             };
 
             await _client.SendAsync("/api/telemetry/web", payload);
@@ -69,20 +76,9 @@ public sealed class TelemetryForgeMiddleware
         }
     }
 
-    private bool ShouldSkip(HttpContext context)
+    private static bool ShouldSkip(HttpContext context)
     {
-        if (_options.RespectDnt && HasDnt(context))
-            return true;
-
-        if (IsStaticFile(context.Request.Path))
-            return true;
-
-        return false;
-    }
-
-    private static bool HasDnt(HttpContext context)
-    {
-        return context.Request.Headers["DNT"].ToString() == "1";
+        return IsStaticFile(context.Request.Path);
     }
 
     private static string GetClientIp(HttpContext context)

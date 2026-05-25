@@ -36,14 +36,14 @@ builder.Services.AddTelemetryForge(options =>
 
 ## What Gets Collected
 
-- **Web:** per-request page view events, referrer, browser/OS (from User-Agent), custom events — all server-side, no JavaScript
+- **Web:** per-request page view events, referrer, browser/OS (from User-Agent), custom events, CDN geolocation (Cloudflare/CloudFront/Vercel/Akamai) — all server-side, no JavaScript
 - **Desktop:** feature/screen navigation, error events, app version, platform, machine fingerprint (hashed), periodic heartbeats
 
 ## What Does NOT Happen
 
 - No cookies set by the library
 - No JavaScript emitted
-- No raw IP addresses stored — hashing and geolocation handled server-side
+- No raw IP addresses retained — hashed server-side with a rotating salt
 - No cross-site tracking
 - No advertising identifiers
 

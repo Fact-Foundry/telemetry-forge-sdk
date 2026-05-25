@@ -6,14 +6,15 @@ namespace FactFoundry.TelemetryForge.Web;
 public sealed class WebTelemetryOptions : TelemetryOptionsBase
 {
     /// <summary>
-    /// When true, the library will not track sessions for requests that include the DNT header.
-    /// Defaults to true.
-    /// </summary>
-    public bool RespectDnt { get; set; } = true;
-
-    /// <summary>
     /// When true, reads the <c>_ga</c> cookie (if present) and includes its hash in the payload
     /// for returning-visitor resolution. Defaults to false (opt-in).
     /// </summary>
     public bool UseGaCookie { get; set; }
+
+    /// <summary>
+    /// CDN/reverse proxy provider used for geolocation headers.
+    /// Set this to avoid checking all providers on every request.
+    /// Defaults to <see cref="GeoProvider.Auto"/> (checks all known providers).
+    /// </summary>
+    public GeoProvider GeoProvider { get; set; } = GeoProvider.Auto;
 }

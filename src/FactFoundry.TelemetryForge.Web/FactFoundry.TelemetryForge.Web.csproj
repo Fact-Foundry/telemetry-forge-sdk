@@ -9,7 +9,12 @@
     <Description>ASP.NET and Blazor Server telemetry for TelemetryForge — server-side session tracking with no JavaScript.</Description>
     <Authors>Fact Foundry LLC</Authors>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

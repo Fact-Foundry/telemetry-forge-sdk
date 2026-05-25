@@ -21,7 +21,7 @@ The server (`FactFoundry.TelemetryForge.Server`, AGPL-3.0) is a separate reposit
 ## Design Principles
 
 1. **Never crash the host** — telemetry failures are logged and swallowed. No exception ever escapes the SDK.
-2. **Privacy by default** — raw IP addresses are hashed before transmission. Machine fingerprints are SHA-256 hashed client-side. DNT headers are respected.
+2. **Privacy by default** — raw IP addresses are hashed server-side with a rotating salt. Machine fingerprints are SHA-256 hashed client-side before transmission.
 3. **Minimal dependencies** — prefer .NET built-in APIs. Every transitive dependency becomes a cost for consumers.
 4. **Self-contained packages** — each package ships its own HTTP client, interfaces, and options. No shared "core" library to version-lock consumers.
 5. **Resilient delivery** — HTTP clients use `AddStandardResilienceHandler()` for automatic retry, timeout, and circuit-breaker policies.
@@ -67,9 +67,11 @@ For each inbound HTTP request, the middleware:
 | User-Agent | `User-Agent` header |
 | Referrer | `Referer` header |
 | Language | `Accept-Language` header (first value) |
+| Sec-CH-UA | `Sec-CH-UA` client hint header |
+| Sec-CH-UA-Mobile | `Sec-CH-UA-Mobile` client hint header |
+| Sec-CH-UA-Platform | `Sec-CH-UA-Platform` client hint header |
 | Page path | `HttpContext.Request.Path` |
 | Status code | `HttpContext.Response.StatusCode` |
-| DNT | `DNT` header |
 | GA cookie | `_ga` cookie value (only if `UseGaCookie` is enabled) |
 | Duration | `Stopwatch` around request pipeline |
 
@@ -89,8 +91,8 @@ builder.Services.AddTelemetryForge(options =>
 {
     options.Endpoint   = "https://telemetry.yourdomain.com";
     options.ApiKey     = "your-site-api-key";
-    options.RespectDnt = true;   // default: true — skip tracking if DNT header is set
-    options.UseGaCookie = false; // default: false — hash _ga cookie for cross-session identity
+    options.UseGaCookie = false;            // default: false — include _ga cookie for cross-session identity
+    options.GeoProvider = GeoProvider.Auto; // default: Auto — set to Cloudflare, CloudFront, Vercel, Akamai, or None
 });
 
 app.UseTelemetryForge(); // register middleware in the request pipeline
@@ -100,6 +102,7 @@ app.UseTelemetryForge(); // register middleware in the request pipeline
 
 ```json
 {
+  "session_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
   "event_type": "page_view",
   "platform": "aspnet | blazor-server",
   "timestamp": "2026-05-25T10:00:00Z",
@@ -108,13 +111,14 @@ app.UseTelemetryForge(); // register middleware in the request pipeline
   "user_agent": "Mozilla/5.0 ...",
   "referrer": "https://google.com",
   "language": "en-US",
+  "sec_ch_ua": "\"Chromium\";v=\"136\", \"Google Chrome\";v=\"136\"",
+  "sec_ch_ua_mobile": "?0",
+  "sec_ch_ua_platform": "\"Windows\"",
   "page_path": "/products",
   "status_code": 200,
   "duration_ms": 45,
-  "dnt": false,
-  "event_name": null,
-  "event_data": null,
-  "target_url": null
+  "country": "US",
+  "region": "California"
 }
 ```
 
@@ -124,10 +128,13 @@ Null fields are omitted from the serialized JSON.
 
 | Identifier | Source | Purpose |
 |---|---|---|
-| `ip_address` | Client IP from HttpContext | Server hashes this to create a daily-salted visitor hash for first-visit detection |
+| `session_id` | Client-generated UUID | Groups events into a single session. One per circuit (Blazor) or per request (middleware) |
+| `ip_address` | Client IP from HttpContext | Server hashes this with a daily-rotating salt for visitor identity |
 | `ga_value` | `_ga` cookie (opt-in) | If present, server uses this hash for more stable cross-session identity |
+| `country` | CDN geo header (e.g., `CF-IPCountry`) | Country code from the CDN/reverse proxy, if available |
+| `region` | CDN geo header (e.g., `CF-Region`) | Region/state from the CDN/reverse proxy, if available |
 
-The server hashes the IP with a daily-rotating salt for visitor identity, performs geolocation, then discards the raw address. Hashing is a server-side concern — the SDK sends the raw IP so the server can geolocate before discarding it.
+The SDK reads geolocation from CDN headers when available (configured via `GeoProvider`). The server hashes the raw IP with a daily-rotating salt for visitor identity, then discards it.
 
 ---
 
@@ -177,7 +184,6 @@ builder.Services.AddTelemetryForge(options =>
     options.Endpoint   = "https://telemetry.yourdomain.com";
     options.ApiKey     = "your-app-api-key";
     options.AppVersion = "2.1.0";       // auto-populated from entry assembly if omitted
-    options.LicenseJwt = "optional-jwt"; // optional, for license tier correlation
     options.HeartbeatIntervalMinutes = 15; // default: 15. Set to null/0 to disable
 });
 ```
@@ -222,7 +228,6 @@ Each heartbeat (and the initial flush) sends a payload with only the delta since
   "platform": "windows",
   "os_version": "Microsoft Windows NT 10.0.22631.0",
   "fingerprint_hash": "a1b2c3d4e5f6...",
-  "license_jwt": null,
   "session_start": "2026-05-25T09:00:00Z",
   "session_end": "2026-05-25T09:15:00Z",
   "duration_ms": 900000,
@@ -293,9 +298,11 @@ Similar to the Desktop package but with mobile-specific identity resolution:
 | Machine fingerprint (SHA-256 hash) | No | Yes | No |
 | Device identifier (SHA-256 hash) | No | No | Yes |
 | User-Agent string | Yes | No | No |
+| Client hints (Sec-CH-UA) | Yes | No | No |
 | Page / feature paths | Yes | Yes | Yes |
 | Error messages | No | Yes | Yes |
 | Cookies | Only `_ga` if opted in | No | No |
+| CDN geolocation (country/region) | If available | No | No |
 
 ### What the SDK never collects
 
@@ -304,10 +311,6 @@ Similar to the Desktop package but with mobile-specific identity resolution:
 - Keystroke or mouse tracking data
 - Cross-site tracking identifiers
 - Unrelated cookies or local storage
-
-### DNT Support
-
-The web package respects the `DNT` HTTP header by default (`RespectDnt = true`). When DNT is detected, the middleware skips telemetry entirely. This can be disabled if the consumer has a separate consent mechanism.
 
 ---
 
@@ -332,7 +335,7 @@ These SDK packages are designed to work with `FactFoundry.TelemetryForge.Server`
 - IP hashing with daily-rotating salt
 - Visitor/device first-seen detection
 - User-Agent parsing (browser, OS, device type)
-- IP geolocation (country/region via MaxMind GeoLite2)
+- IP geolocation (country/region via MaxMind GeoLite2, or pre-resolved from CDN headers sent by the SDK)
 - Event enrichment and storage
 - Session materialization (for web events)
 - Downstream sink forwarding

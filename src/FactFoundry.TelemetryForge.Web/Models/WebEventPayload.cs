@@ -7,6 +7,9 @@ namespace FactFoundry.TelemetryForge.Web.Models;
 /// </summary>
 public sealed class WebEventPayload
 {
+    [JsonPropertyName("session_id")]
+    public required string SessionId { get; init; }
+
     [JsonPropertyName("event_type")]
     public required string EventType { get; init; }
 
@@ -44,8 +47,25 @@ public sealed class WebEventPayload
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? DurationMs { get; init; }
 
-    [JsonPropertyName("dnt")]
-    public required bool Dnt { get; init; }
+    [JsonPropertyName("sec_ch_ua")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SecChUa { get; init; }
+
+    [JsonPropertyName("sec_ch_ua_mobile")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SecChUaMobile { get; init; }
+
+    [JsonPropertyName("sec_ch_ua_platform")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SecChUaPlatform { get; init; }
+
+    [JsonPropertyName("country")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Country { get; init; }
+
+    [JsonPropertyName("region")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Region { get; init; }
 
     [JsonPropertyName("event_name")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

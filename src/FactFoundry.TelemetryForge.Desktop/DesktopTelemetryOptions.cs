@@ -11,12 +11,6 @@ public sealed class DesktopTelemetryOptions : TelemetryOptionsBase
     public string? AppVersion { get; set; }
 
     /// <summary>
-    /// Optional JWT from an existing licensing system, enabling the server to correlate
-    /// sessions with license records.
-    /// </summary>
-    public string? LicenseJwt { get; set; }
-
-    /// <summary>
     /// Interval in minutes between heartbeat flushes that send feature/error deltas to the server.
     /// Set to 0 or null to disable periodic heartbeats (only flush at shutdown).
     /// Defaults to 15 minutes.

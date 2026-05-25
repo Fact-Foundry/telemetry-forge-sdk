@@ -20,3 +20,7 @@ When implemented, the mobile package should include heartbeat support from the s
 - `session_id` + `sequence` fields
 - Configurable heartbeat interval
 - `device_hash_type` field indicating identifier source (`vendor_id`, `android_id`, `generated_guid`)
+
+## Cross-Language Ingestion Spec
+
+- **Protocol specification** — publish a language-agnostic spec (e.g., OpenAPI) documenting the three ingestion endpoints (`/api/telemetry/web`, `/api/telemetry/desktop`, `/api/telemetry/mobile`), payload schemas, authentication (`X-TelemetryForge-Key` header), and bot detection signals. This would enable community connectors in Python, PHP, Go, etc. without reverse-engineering the .NET SDK
