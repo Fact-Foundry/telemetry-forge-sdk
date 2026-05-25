@@ -1,8 +1,8 @@
 @page "/"
-@using FactFoundry.TelemetryForge.Core
 @using FactFoundry.TelemetryForge.Desktop
 @using FactFoundry.TelemetryForge.Web.Models
 @using Microsoft.Extensions.DependencyInjection
+@using Microsoft.Extensions.Http.Resilience
 @using Microsoft.Extensions.Logging
 @using System.Text.Json
 @implements IAsyncDisposable
@@ -283,11 +283,12 @@
         var services = new ServiceCollection();
         services.AddLogging(b => b.AddConsole().SetMinimumLevel(LogLevel.Debug));
         services.AddLogging(b => b.AddProvider(new EventLogLoggerProvider(_eventLog, () => InvokeAsync(StateHasChanged))));
-        services.AddTelemetryForgeCore(new WebOptionsShim
+        services.AddHttpClient<ITelemetryClient, TelemetryForgeHttpClient>(client =>
         {
-            Endpoint = _endpoint,
-            ApiKey = _apiKey
-        });
+            client.BaseAddress = new Uri(_endpoint.TrimEnd('/'));
+            client.DefaultRequestHeaders.Add("X-TelemetryForge-Key", _apiKey);
+        })
+        .AddStandardResilienceHandler();
 
         _webServiceProvider = services.BuildServiceProvider();
         _webClient = _webServiceProvider.GetRequiredService<ITelemetryClient>();
@@ -370,8 +371,6 @@
         if (_webServiceProvider is not null)
             await _webServiceProvider.DisposeAsync();
     }
-
-    private sealed class WebOptionsShim : TelemetryOptionsBase { }
 
     private sealed class EventLogLoggerProvider(List<string> log, Func<Task> onLog) : ILoggerProvider
     {

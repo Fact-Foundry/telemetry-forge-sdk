@@ -1,4 +1,3 @@
-using FactFoundry.TelemetryForge.Core;
 using FactFoundry.TelemetryForge.Desktop;
 using FactFoundry.TelemetryForge.Desktop.Models;
 using Microsoft.Extensions.Logging;

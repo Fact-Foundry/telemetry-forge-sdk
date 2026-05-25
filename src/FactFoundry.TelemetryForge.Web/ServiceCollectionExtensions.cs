@@ -1,7 +1,7 @@
-using FactFoundry.TelemetryForge.Core;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http.Resilience;
 
 namespace FactFoundry.TelemetryForge.Web;
 
@@ -24,7 +24,14 @@ public static class ServiceCollectionExtensions
         configure(options);
 
         services.Configure(configure);
-        services.AddTelemetryForgeCore(options);
+
+        services.AddHttpClient<ITelemetryClient, TelemetryForgeHttpClient>(client =>
+        {
+            client.BaseAddress = new Uri(options.Endpoint.TrimEnd('/'));
+            client.DefaultRequestHeaders.Add("X-TelemetryForge-Key", options.ApiKey);
+        })
+        .AddStandardResilienceHandler();
+
         services.AddHttpContextAccessor();
         services.AddScoped<TelemetryForgeCircuitHandler>();
         services.AddScoped<CircuitHandler>(sp => sp.GetRequiredService<TelemetryForgeCircuitHandler>());

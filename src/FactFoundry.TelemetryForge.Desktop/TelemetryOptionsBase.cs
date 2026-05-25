@@ -1,4 +1,4 @@
-namespace FactFoundry.TelemetryForge.Core;
+namespace FactFoundry.TelemetryForge.Desktop;
 
 /// <summary>
 /// Base configuration options shared by all TelemetryForge packages.

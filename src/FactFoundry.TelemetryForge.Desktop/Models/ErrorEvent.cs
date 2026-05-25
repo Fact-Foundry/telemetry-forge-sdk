@@ -1,4 +1,4 @@
-namespace FactFoundry.TelemetryForge.Core.Models;
+namespace FactFoundry.TelemetryForge.Desktop.Models;
 
 /// <summary>
 /// An error captured during a telemetry session.

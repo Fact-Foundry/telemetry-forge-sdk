@@ -1,5 +1,3 @@
-using FactFoundry.TelemetryForge.Core;
-
 namespace FactFoundry.TelemetryForge.Web;
 
 /// <summary>

@@ -1,8 +1,8 @@
-using FactFoundry.TelemetryForge.Core;
+using FactFoundry.TelemetryForge.Desktop;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
-namespace FactFoundry.TelemetryForge.Tests.Core;
+namespace FactFoundry.TelemetryForge.Tests.Desktop;
 
 public class TelemetryForgeHttpClientTests
 {

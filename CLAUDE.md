@@ -20,19 +20,17 @@ The server is a separate repository (`telemetry-forge`, AGPL-3.0).
 
 | Project | Purpose |
 |---|---|
-| `FactFoundry.TelemetryForge.Core` | Shared models, interfaces, DTOs, and contracts |
-| `FactFoundry.TelemetryForge.Web` | ASP.NET/Blazor middleware — captures web session telemetry from `HttpContext` and Blazor circuit events |
-| `FactFoundry.TelemetryForge.Desktop` | Desktop app telemetry — machine fingerprinting, session tracking, feature navigation |
+| `FactFoundry.TelemetryForge.Web` | ASP.NET/Blazor middleware — captures web session telemetry from `HttpContext` and Blazor circuit events. Self-contained with its own HTTP client, interfaces, and options |
+| `FactFoundry.TelemetryForge.Desktop` | Desktop app telemetry — machine fingerprinting, session tracking, feature navigation. Self-contained with its own HTTP client, hashing, interfaces, and options |
 | `FactFoundry.TelemetryForge.Mobile` | MAUI mobile app telemetry — device identification, session tracking (deferred) |
 | `FactFoundry.TelemetryForge.Tests` | Test projects |
 
 ## Build Commands
 
-- **Core:** `dotnet build src/FactFoundry.TelemetryForge.Core/FactFoundry.TelemetryForge.Core.csproj`
 - **Web:** `dotnet build src/FactFoundry.TelemetryForge.Web/FactFoundry.TelemetryForge.Web.csproj`
 - **Desktop:** `dotnet build src/FactFoundry.TelemetryForge.Desktop/FactFoundry.TelemetryForge.Desktop.csproj`
 - **Mobile:** `dotnet build src/FactFoundry.TelemetryForge.Mobile/FactFoundry.TelemetryForge.Mobile.csproj`
-- **All:** `dotnet build TelemetryForgeSDK.sln`
+- **All:** `dotnet build TelemetryForgeSDK.slnx`
 - **Tests:** `dotnet test`
 
 ## Server API Endpoints (consumed by these packages)

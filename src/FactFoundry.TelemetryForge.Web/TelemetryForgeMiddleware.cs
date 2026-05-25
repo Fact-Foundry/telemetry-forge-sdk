@@ -2,7 +2,6 @@ using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using FactFoundry.TelemetryForge.Core;
 using FactFoundry.TelemetryForge.Web.Models;
 
 namespace FactFoundry.TelemetryForge.Web;
