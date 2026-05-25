@@ -5,10 +5,13 @@
 @using Microsoft.Extensions.Http.Resilience
 @using Microsoft.Extensions.Logging
 @using System.Text.Json
+@using System.Reflection
+@inject IHttpContextAccessor HttpContextAccessor
 @implements IAsyncDisposable
 
 <div style="max-width: 960px; margin: 0 auto; padding: 2rem;">
-    <h1 style="color: #7c3aed; margin-bottom: 1.5rem;">TelemetryForge SDK Tester</h1>
+    <h1 style="color: #7c3aed; margin-bottom: 0.25rem;">TelemetryForge SDK Tester</h1>
+    <p style="color: #666; font-size: 0.8rem; margin-bottom: 1.5rem;">SDK v@_sdkVersion</p>
 
     @if (!_sessionActive)
     {
@@ -136,6 +139,9 @@
                     <div><span style="color: #7c3aed;">Referrer:</span> @(_webReferrer ?? "(direct)")</div>
                     <div><span style="color: #7c3aed;">User-Agent:</span> <span style="word-break: break-all;">@_webUserAgent</span></div>
                     <div><span style="color: #7c3aed;">Language:</span> @_webLanguage</div>
+                    <div><span style="color: #7c3aed;">Sec-CH-UA:</span> <span style="word-break: break-all;">@(_webSecChUa ?? "(none)")</span></div>
+                    <div><span style="color: #7c3aed;">Sec-CH-UA-Mobile:</span> @(_webSecChUaMobile ?? "(none)")</div>
+                    <div><span style="color: #7c3aed;">Sec-CH-UA-Platform:</span> @(_webSecChUaPlatform ?? "(none)")</div>
                     <div><span style="color: #7c3aed;">IP:</span> @_webIp</div>
                 </div>
             </div>
@@ -208,6 +214,11 @@
 @code {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
+    private readonly string _sdkVersion = typeof(WebEventPayload).Assembly
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        ?? typeof(WebEventPayload).Assembly.GetName().Version?.ToString()
+        ?? "unknown";
+
     private string _mode = "desktop";
     private string _endpoint = "http://localhost:5090";
     private string _apiKey = "";
@@ -223,13 +234,42 @@
     private ServiceProvider? _webServiceProvider;
     private DateTimeOffset _webSessionStart;
     private readonly List<string> _webPagePath = [];
-    private string _webUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36";
-    private string? _webReferrer = "https://google.com/search?q=your+product";
-    private string _webLanguage = "en-US";
-    private string _webIp = "73.162.44.12";
+    private string _webUserAgent = string.Empty;
+    private string? _webReferrer;
+    private string _webLanguage = string.Empty;
+    private string _webIp = string.Empty;
+    private string? _webSecChUa;
+    private string? _webSecChUaMobile;
+    private string? _webSecChUaPlatform;
+    private string _realUserAgent = string.Empty;
+    private string? _realReferrer;
+    private string _realLanguage = string.Empty;
+    private string? _realSecChUa;
+    private string? _realSecChUaMobile;
+    private string? _realSecChUaPlatform;
     private string _webSessionId = string.Empty;
     private string? _webPayloadJson;
     private string _webPersona = "human";
+
+    protected override void OnInitialized()
+    {
+        var context = HttpContextAccessor.HttpContext;
+        if (context is not null)
+        {
+            _realUserAgent = _webUserAgent = context.Request.Headers.UserAgent.ToString();
+            _realReferrer = _webReferrer = context.Request.Headers.Referer.ToString() is { Length: > 0 } r ? r : null;
+            _realLanguage = _webLanguage = context.Request.Headers.AcceptLanguage.ToString();
+            _realSecChUa = _webSecChUa = context.Request.Headers["Sec-CH-UA"].ToString() is { Length: > 0 } ch ? ch : null;
+            _realSecChUaMobile = _webSecChUaMobile = context.Request.Headers["Sec-CH-UA-Mobile"].ToString() is { Length: > 0 } chm ? chm : null;
+            _realSecChUaPlatform = _webSecChUaPlatform = context.Request.Headers["Sec-CH-UA-Platform"].ToString() is { Length: > 0 } chp ? chp : null;
+
+            var forwarded = context.Request.Headers["X-Forwarded-For"].ToString();
+            if (!string.IsNullOrEmpty(forwarded))
+                _webIp = forwarded.Split(',', StringSplitOptions.TrimEntries)[0];
+            else
+                _webIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        }
+    }
 
     private void SetPersona(string persona)
     {
@@ -240,26 +280,41 @@
                 _webUserAgent = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
                 _webLanguage = "";
                 _webReferrer = null;
+                _webSecChUa = null;
+                _webSecChUaMobile = null;
+                _webSecChUaPlatform = null;
                 break;
             case "bingbot":
                 _webUserAgent = "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)";
                 _webLanguage = "";
                 _webReferrer = null;
+                _webSecChUa = null;
+                _webSecChUaMobile = null;
+                _webSecChUaPlatform = null;
                 break;
             case "headless":
                 _webUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/130.0.0.0 Safari/537.36";
                 _webLanguage = "";
                 _webReferrer = null;
+                _webSecChUa = null;
+                _webSecChUaMobile = null;
+                _webSecChUaPlatform = null;
                 break;
             case "empty-ua":
                 _webUserAgent = "";
                 _webLanguage = "";
                 _webReferrer = null;
+                _webSecChUa = null;
+                _webSecChUaMobile = null;
+                _webSecChUaPlatform = null;
                 break;
             default:
-                _webUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36";
-                _webLanguage = "en-US";
-                _webReferrer = "https://google.com/search?q=your+product";
+                _webUserAgent = _realUserAgent;
+                _webLanguage = _realLanguage;
+                _webReferrer = _realReferrer;
+                _webSecChUa = _realSecChUa;
+                _webSecChUaMobile = _realSecChUaMobile;
+                _webSecChUaPlatform = _realSecChUaPlatform;
                 break;
         }
     }
@@ -376,6 +431,9 @@
                 UserAgent = _webUserAgent,
                 Referrer = _webReferrer,
                 Language = _webLanguage,
+                SecChUa = _webSecChUa,
+                SecChUaMobile = _webSecChUaMobile,
+                SecChUaPlatform = _webSecChUaPlatform,
                 PagePath = path,
                 StatusCode = 200
             };
@@ -412,6 +470,9 @@
             UserAgent = _webUserAgent,
             Referrer = _webReferrer,
             Language = _webLanguage,
+            SecChUa = _webSecChUa,
+            SecChUaMobile = _webSecChUaMobile,
+            SecChUaPlatform = _webSecChUaPlatform,
             PagePath = lastPage
         };
 

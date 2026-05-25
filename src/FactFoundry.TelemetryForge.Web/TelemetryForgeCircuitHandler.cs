@@ -25,6 +25,9 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler, ITelemetryFor
     private string _userAgent = string.Empty;
     private string? _referrer;
     private string _language = string.Empty;
+    private string? _secChUa;
+    private string? _secChUaMobile;
+    private string? _secChUaPlatform;
     private string? _country;
     private string? _region;
     private string _lastPagePath = "/";
@@ -50,6 +53,9 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler, ITelemetryFor
             _userAgent = context.Request.Headers.UserAgent.ToString();
             _referrer = context.Request.Headers.Referer.ToString() is { Length: > 0 } r ? r : null;
             _language = context.Request.Headers.AcceptLanguage.ToString();
+            _secChUa = context.Request.Headers["Sec-CH-UA"].ToString() is { Length: > 0 } ch ? ch : null;
+            _secChUaMobile = context.Request.Headers["Sec-CH-UA-Mobile"].ToString() is { Length: > 0 } chm ? chm : null;
+            _secChUaPlatform = context.Request.Headers["Sec-CH-UA-Platform"].ToString() is { Length: > 0 } chp ? chp : null;
             (_country, _region) = GeoHeaderResolver.Resolve(context, _options.GeoProvider);
 
             if (_options.UseGaCookie
@@ -109,6 +115,9 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler, ITelemetryFor
                 UserAgent = _userAgent,
                 Referrer = _referrer,
                 Language = _language,
+                SecChUa = _secChUa,
+                SecChUaMobile = _secChUaMobile,
+                SecChUaPlatform = _secChUaPlatform,
                 PagePath = pagePath,
                 Country = _country,
                 Region = _region,

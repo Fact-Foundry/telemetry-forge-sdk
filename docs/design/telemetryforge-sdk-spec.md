@@ -67,6 +67,9 @@ For each inbound HTTP request, the middleware:
 | User-Agent | `User-Agent` header |
 | Referrer | `Referer` header |
 | Language | `Accept-Language` header (first value) |
+| Sec-CH-UA | `Sec-CH-UA` client hint header |
+| Sec-CH-UA-Mobile | `Sec-CH-UA-Mobile` client hint header |
+| Sec-CH-UA-Platform | `Sec-CH-UA-Platform` client hint header |
 | Page path | `HttpContext.Request.Path` |
 | Status code | `HttpContext.Response.StatusCode` |
 | GA cookie | `_ga` cookie value (only if `UseGaCookie` is enabled) |
@@ -108,6 +111,9 @@ app.UseTelemetryForge(); // register middleware in the request pipeline
   "user_agent": "Mozilla/5.0 ...",
   "referrer": "https://google.com",
   "language": "en-US",
+  "sec_ch_ua": "\"Chromium\";v=\"136\", \"Google Chrome\";v=\"136\"",
+  "sec_ch_ua_mobile": "?0",
+  "sec_ch_ua_platform": "\"Windows\"",
   "page_path": "/products",
   "status_code": 200,
   "duration_ms": 45,
@@ -292,6 +298,7 @@ Similar to the Desktop package but with mobile-specific identity resolution:
 | Machine fingerprint (SHA-256 hash) | No | Yes | No |
 | Device identifier (SHA-256 hash) | No | No | Yes |
 | User-Agent string | Yes | No | No |
+| Client hints (Sec-CH-UA) | Yes | No | No |
 | Page / feature paths | Yes | Yes | Yes |
 | Error messages | No | Yes | Yes |
 | Cookies | Only `_ga` if opted in | No | No |

@@ -84,6 +84,9 @@ Each event is a lightweight JSON payload posted to `POST /api/telemetry/web`:
 | `platform` | `aspnet` or `blazor-server` |
 | `ip_address` | Client IP (server handles hashing) |
 | `user_agent` | Browser User-Agent string |
+| `sec_ch_ua` | Sec-CH-UA client hint (browser brand/version list) |
+| `sec_ch_ua_mobile` | Sec-CH-UA-Mobile client hint (`?0` or `?1`) |
+| `sec_ch_ua_platform` | Sec-CH-UA-Platform client hint (OS name) |
 | `page_path` | The request or navigation path |
 | `status_code` | HTTP status code (middleware only) |
 | `duration_ms` | Request duration (middleware only) |

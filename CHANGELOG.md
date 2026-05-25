@@ -10,6 +10,7 @@
 - Web: circuit handler now sends `page_view` on each navigation and `circuit_close` on disconnect
 - Web: add `GeoProvider` option for CDN geolocation headers (Cloudflare, CloudFront, Vercel, Akamai, or auto-detect)
 - Web: add `country` and `region` fields to payload from CDN geo headers
+- Web: capture `Sec-CH-UA`, `Sec-CH-UA-Mobile`, and `Sec-CH-UA-Platform` client hints for accurate browser identification
 - Web: add bot persona selector to test app for server-side bot detection testing
 - Web: add per-package NuGet README
 - Desktop: add `session_id` (UUID) and `sequence` counter to all payloads
