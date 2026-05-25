@@ -17,7 +17,6 @@ builder.Services.AddTelemetryForge(options =>
 {
     options.Endpoint = "https://telemetry.yourdomain.com";
     options.ApiKey   = "your-site-api-key";
-    options.SiteName = "My Blazor App";
 });
 
 app.UseTelemetryForge();
@@ -30,7 +29,6 @@ builder.Services.AddTelemetryForge(options =>
 {
     options.Endpoint   = "https://telemetry.yourdomain.com";
     options.ApiKey     = "your-app-api-key";
-    options.AppName    = "My Desktop App";
     options.AppVersion = Assembly.GetExecutingAssembly()
                                  .GetName().Version?.ToString();
 });
@@ -45,13 +43,23 @@ builder.Services.AddTelemetryForge(options =>
 
 - No cookies set by the library
 - No JavaScript emitted
-- No raw IP addresses transmitted (hashed before sending)
+- No raw IP addresses stored — hashing and geolocation handled server-side
 - No cross-site tracking
 - No advertising identifiers
 
+## Test App
+
+A Blazor Server test app is included for interactive testing of the Desktop SDK against a running TelemetryForge Server.
+
+```bash
+dotnet run --project tests/FactFoundry.TelemetryForge.TestApp
+```
+
+Open the URL shown in the terminal (typically `http://localhost:5000`), enter your server endpoint and API key, then click **Start Session**. From there you can navigate features, simulate errors, and flush the session to verify payloads reach the server.
+
 ## Requirements
 
-- .NET 10
+- .NET 8, 9, or 10
 - A running [TelemetryForge Server](https://github.com/FactFoundry/telemetry-forge) instance
 
 ## License

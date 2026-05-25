@@ -8,7 +8,7 @@ The server is a separate repository (`telemetry-forge`, AGPL-3.0).
 
 ## First Steps
 
-**Read `docs/design/telemetryforge-spec.md` at the start of every session** — it contains the full system design including payload schemas and identity resolution. Subsequent decisions will be in documents in the `docs/design/decisions/` folder.
+**Read `docs/design/telemetryforge-sdk-spec.md` at the start of every session** — it contains the full system design including payload schemas and identity resolution. Subsequent decisions will be in documents in the `docs/design/decisions/` folder.
 
 ## Architecture
 

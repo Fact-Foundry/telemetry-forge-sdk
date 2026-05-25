@@ -1,0 +1,393 @@
+@page "/"
+@using FactFoundry.TelemetryForge.Core
+@using FactFoundry.TelemetryForge.Desktop
+@using FactFoundry.TelemetryForge.Web.Models
+@using Microsoft.Extensions.DependencyInjection
+@using Microsoft.Extensions.Logging
+@using System.Text.Json
+@implements IAsyncDisposable
+
+<div style="max-width: 960px; margin: 0 auto; padding: 2rem;">
+    <h1 style="color: #7c3aed; margin-bottom: 1.5rem;">TelemetryForge SDK Tester</h1>
+
+    @if (!_sessionActive)
+    {
+        <div style="display: flex; gap: 0; margin-bottom: 1.5rem;">
+            <button @onclick='() => _mode = "desktop"'
+                style="flex: 1; padding: 0.75rem; border: none; cursor: pointer; font-size: 1rem; border-radius: 8px 0 0 8px;
+                       background: @(_mode == "desktop" ? "#7c3aed" : "#16213e"); color: @(_mode == "desktop" ? "white" : "#aaa");">
+                Desktop SDK
+            </button>
+            <button @onclick='() => _mode = "web"'
+                style="flex: 1; padding: 0.75rem; border: none; cursor: pointer; font-size: 1rem; border-radius: 0 8px 8px 0;
+                       background: @(_mode == "web" ? "#7c3aed" : "#16213e"); color: @(_mode == "web" ? "white" : "#aaa");">
+                Web SDK
+            </button>
+        </div>
+
+        <div style="background: #16213e; border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
+            <h2 style="margin-bottom: 1rem; font-size: 1.1rem;">Connection</h2>
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; margin-bottom: 0.3rem; color: #aaa;">Server Endpoint</label>
+                <input @bind="_endpoint" style="width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid #333; background: #0f0f23; color: #eee;" />
+            </div>
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; margin-bottom: 0.3rem; color: #aaa;">API Key</label>
+                <input @bind="_apiKey" type="password" style="width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid #333; background: #0f0f23; color: #eee;" />
+            </div>
+            <button @onclick="StartSession" style="background: #7c3aed; color: white; border: none; padding: 0.7rem 2rem; border-radius: 4px; cursor: pointer; font-size: 1rem;">
+                Start Session
+            </button>
+        </div>
+    }
+    else if (_mode == "desktop")
+    {
+        @* ── Desktop Mode ── *@
+        <div style="background: #16213e; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: #4ade80;">● Desktop Session Active</span>
+            <span style="color: #aaa;">@_eventLog.Count(e => e.StartsWith("[") && e.Contains("Feature:")) features tracked</span>
+            <button @onclick="StopDesktopSession" style="background: #dc2626; color: white; border: none; padding: 0.5rem 1.5rem; border-radius: 4px; cursor: pointer;">
+                Stop &amp; Flush
+            </button>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+            <div style="background: #16213e; border-radius: 8px; padding: 1.5rem;">
+                <h3 style="margin-bottom: 1rem; color: #7c3aed;">Navigation</h3>
+                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                    <button @onclick='() => TrackFeature("Dashboard")' class="feature-btn">Dashboard</button>
+                    <button @onclick='() => TrackFeature("Editor")' class="feature-btn">Editor</button>
+                    <button @onclick='() => TrackFeature("Settings")' class="feature-btn">Settings</button>
+                    <button @onclick='() => TrackFeature("Reports")' class="feature-btn">Reports</button>
+                    <button @onclick='() => TrackFeature("UserProfile")' class="feature-btn">User Profile</button>
+                </div>
+            </div>
+
+            <div style="background: #16213e; border-radius: 8px; padding: 1.5rem;">
+                <h3 style="margin-bottom: 1rem; color: #7c3aed;">Actions</h3>
+                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                    <button @onclick='() => TrackFeature("Export")' class="feature-btn">Export Data</button>
+                    <button @onclick='() => TrackFeature("Import")' class="feature-btn">Import File</button>
+                    <button @onclick='() => TrackFeature("Search")' class="feature-btn">Search</button>
+                    <button @onclick="SimulateError" style="background: #dc2626; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer;">
+                        Simulate Error
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        @* ── Web Mode ── *@
+        <div style="background: #16213e; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: #4ade80;">● Web Session Active</span>
+            <span style="color: #aaa;">@_webPagePath.Count pages visited</span>
+            <button @onclick="StopWebSession" style="background: #dc2626; color: white; border: none; padding: 0.5rem 1.5rem; border-radius: 4px; cursor: pointer;">
+                End Session &amp; Flush
+            </button>
+        </div>
+
+        <div style="background: #16213e; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem;">
+            <h3 style="margin-bottom: 1rem; color: #7c3aed;">Simulate Page Navigation</h3>
+            <p style="color: #888; margin-bottom: 1rem; font-size: 0.9rem;">Click pages to simulate a user browsing your site. Each click adds to the page path.</p>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
+                <button @onclick='() => WebNavigate("/")' class="feature-btn">/  (Home)</button>
+                <button @onclick='() => WebNavigate("/features")' class="feature-btn">/features</button>
+                <button @onclick='() => WebNavigate("/pricing")' class="feature-btn">/pricing</button>
+                <button @onclick='() => WebNavigate("/docs")' class="feature-btn">/docs</button>
+                <button @onclick='() => WebNavigate("/docs/getting-started")' class="feature-btn">/docs/getting-started</button>
+                <button @onclick='() => WebNavigate("/docs/api-reference")' class="feature-btn">/docs/api-reference</button>
+                <button @onclick='() => WebNavigate("/blog")' class="feature-btn">/blog</button>
+                <button @onclick='() => WebNavigate("/about")' class="feature-btn">/about</button>
+                <button @onclick='() => WebNavigate("/contact")' class="feature-btn">/contact</button>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+            <div style="background: #16213e; border-radius: 8px; padding: 1.5rem;">
+                <h3 style="margin-bottom: 1rem; color: #7c3aed;">Session Headers</h3>
+                <div style="font-family: monospace; font-size: 0.85rem; color: #aaa; display: flex; flex-direction: column; gap: 0.4rem;">
+                    <div><span style="color: #7c3aed;">Referrer:</span> @(_webReferrer ?? "(direct)")</div>
+                    <div><span style="color: #7c3aed;">User-Agent:</span> <span style="word-break: break-all;">@_webUserAgent</span></div>
+                    <div><span style="color: #7c3aed;">Language:</span> @_webLanguage</div>
+                    <div><span style="color: #7c3aed;">DNT:</span> @(_webDnt ? "1 (active)" : "0 (inactive)")</div>
+                    <div><span style="color: #7c3aed;">IP:</span> @_webIp</div>
+                </div>
+            </div>
+
+            <div style="background: #16213e; border-radius: 8px; padding: 1.5rem;">
+                <h3 style="margin-bottom: 1rem; color: #7c3aed;">Session Stats</h3>
+                <div style="font-family: monospace; font-size: 0.85rem; color: #aaa; display: flex; flex-direction: column; gap: 0.4rem;">
+                    <div><span style="color: #7c3aed;">Started:</span> @_webSessionStart.ToLocalTime().ToString("HH:mm:ss")</div>
+                    <div><span style="color: #7c3aed;">Duration:</span> @((int)(DateTimeOffset.UtcNow - _webSessionStart).TotalSeconds)s</div>
+                    <div><span style="color: #7c3aed;">Entry Page:</span> @(_webPagePath.Count > 0 ? _webPagePath[0] : "—")</div>
+                    <div><span style="color: #7c3aed;">Current Page:</span> @(_webPagePath.Count > 0 ? _webPagePath[^1] : "—")</div>
+                    <div><span style="color: #7c3aed;">Pages:</span> @_webPagePath.Count</div>
+                </div>
+            </div>
+        </div>
+
+        <div style="background: #16213e; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem;">
+            <h3 style="margin-bottom: 1rem; color: #7c3aed;">Breadcrumb Trail</h3>
+            <div style="display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; font-family: monospace; font-size: 0.85rem;">
+                @for (var i = 0; i < _webPagePath.Count; i++)
+                {
+                    if (i > 0)
+                    {
+                        <span style="color: #555;">&rarr;</span>
+                    }
+                    <span style="background: #0f3460; padding: 0.2rem 0.5rem; border-radius: 3px; color: #eee;">@_webPagePath[i]</span>
+                }
+            </div>
+        </div>
+
+        @if (_webPayloadJson is not null)
+        {
+            <div style="background: #16213e; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem;">
+                <h3 style="margin-bottom: 1rem; color: #4ade80;">Payload Sent to Server</h3>
+                <pre style="background: #0f0f23; padding: 1rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem; color: #eee; white-space: pre-wrap;">@_webPayloadJson</pre>
+            </div>
+        }
+    }
+
+    @* ── Event Log (shared) ── *@
+    @if (_eventLog.Count > 0)
+    {
+        <div style="background: #16213e; border-radius: 8px; padding: 1.5rem;">
+            <h3 style="margin-bottom: 1rem; color: #7c3aed;">Event Log</h3>
+            <div style="max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; color: #aaa;">
+                @foreach (var entry in _eventLog.AsEnumerable().Reverse())
+                {
+                    <div style="padding: 0.2rem 0; border-bottom: 1px solid #222;">@entry</div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .feature-btn {
+        background: #0f3460;
+        color: #eee;
+        border: 1px solid #1a4a7a;
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        cursor: pointer;
+        text-align: left;
+    }
+    .feature-btn:hover {
+        background: #1a4a7a;
+    }
+</style>
+
+@code {
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
+    private string _mode = "desktop";
+    private string _endpoint = "http://localhost:5090";
+    private string _apiKey = "";
+    private bool _sessionActive;
+    private readonly List<string> _eventLog = [];
+
+    // ── Desktop state ──
+    private ServiceProvider? _serviceProvider;
+    private DesktopSessionTracker? _tracker;
+
+    // ── Web state ──
+    private ITelemetryClient? _webClient;
+    private ServiceProvider? _webServiceProvider;
+    private DateTimeOffset _webSessionStart;
+    private readonly List<string> _webPagePath = [];
+    private string _webUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36";
+    private string? _webReferrer = "https://google.com/search?q=your+product";
+    private string _webLanguage = "en-US";
+    private bool _webDnt;
+    private string _webIp = "73.162.44.12";
+    private string? _webPayloadJson;
+
+    private void StartSession()
+    {
+        if (string.IsNullOrWhiteSpace(_endpoint) || string.IsNullOrWhiteSpace(_apiKey))
+            return;
+
+        _eventLog.Clear();
+
+        if (_mode == "desktop")
+            StartDesktopSession();
+        else
+            StartWebSession();
+
+        _sessionActive = true;
+    }
+
+    // ── Desktop ──
+
+    private void StartDesktopSession()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging(b => b.AddConsole().SetMinimumLevel(LogLevel.Debug));
+        services.AddLogging(b => b.AddProvider(new EventLogLoggerProvider(_eventLog, () => InvokeAsync(StateHasChanged))));
+        services.AddTelemetryForge(options =>
+        {
+            options.Endpoint = _endpoint;
+            options.ApiKey = _apiKey;
+            options.AppVersion = "1.0.0-testapp";
+        });
+
+        _serviceProvider = services.BuildServiceProvider();
+        _tracker = _serviceProvider.GetRequiredService<DesktopSessionTracker>();
+        Log("Desktop session started");
+    }
+
+    private async Task StopDesktopSession()
+    {
+        if (_tracker is not null)
+        {
+            try
+            {
+                await _tracker.FlushAsync();
+                Log("Desktop session flushed to server");
+            }
+            catch (Exception ex)
+            {
+                Log($"Flush error: {ex.Message}");
+            }
+        }
+
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+            _serviceProvider = null;
+        }
+
+        _tracker = null;
+        _sessionActive = false;
+    }
+
+    private void TrackFeature(string feature)
+    {
+        _tracker?.TrackFeature(feature);
+        Log($"Feature: {feature}");
+    }
+
+    private void SimulateError()
+    {
+        _tracker?.TrackError("Reports", "Simulated: Data source unavailable");
+        Log("Error: Reports — Data source unavailable");
+    }
+
+    // ── Web ──
+
+    private void StartWebSession()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging(b => b.AddConsole().SetMinimumLevel(LogLevel.Debug));
+        services.AddLogging(b => b.AddProvider(new EventLogLoggerProvider(_eventLog, () => InvokeAsync(StateHasChanged))));
+        services.AddTelemetryForgeCore(new WebOptionsShim
+        {
+            Endpoint = _endpoint,
+            ApiKey = _apiKey
+        });
+
+        _webServiceProvider = services.BuildServiceProvider();
+        _webClient = _webServiceProvider.GetRequiredService<ITelemetryClient>();
+        _webSessionStart = DateTimeOffset.UtcNow;
+        _webPagePath.Clear();
+        _webPayloadJson = null;
+
+        Log("Web session started — click pages to simulate browsing");
+    }
+
+    private void WebNavigate(string path)
+    {
+        _webPagePath.Add(path);
+        Log($"Navigated to {path}");
+    }
+
+    private async Task StopWebSession()
+    {
+        if (_webClient is null || _webPagePath.Count == 0)
+        {
+            Log("No pages visited — nothing to send");
+            _sessionActive = false;
+            return;
+        }
+
+        var sessionEnd = DateTimeOffset.UtcNow;
+        var payload = new WebSessionPayload
+        {
+            Platform = "blazor-server",
+            SessionStart = _webSessionStart,
+            SessionEnd = sessionEnd,
+            DurationMs = (long)(sessionEnd - _webSessionStart).TotalMilliseconds,
+            IpAddress = _webIp,
+            GaValue = null,
+            UserAgent = _webUserAgent,
+            Referrer = _webReferrer,
+            Language = _webLanguage,
+            EntryPage = _webPagePath[0],
+            ExitPage = _webPagePath[^1],
+            PagePath = _webPagePath.ToList(),
+            StatusCodes = new Dictionary<string, int> { ["200"] = _webPagePath.Count },
+            Dnt = _webDnt
+        };
+
+        _webPayloadJson = JsonSerializer.Serialize(payload, JsonOptions);
+        Log("Payload built — sending to server...");
+
+        try
+        {
+            await _webClient.SendAsync("/api/telemetry/web", payload);
+            Log("Web session flushed to server");
+        }
+        catch (Exception ex)
+        {
+            Log($"Flush error: {ex.Message}");
+        }
+
+        if (_webServiceProvider is not null)
+        {
+            await _webServiceProvider.DisposeAsync();
+            _webServiceProvider = null;
+        }
+
+        _webClient = null;
+    }
+
+    // ── Shared ──
+
+    private void Log(string message)
+    {
+        _eventLog.Add($"[{DateTime.Now:HH:mm:ss}] {message}");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_tracker is not null)
+            await _tracker.FlushAsync();
+        if (_serviceProvider is not null)
+            await _serviceProvider.DisposeAsync();
+        if (_webServiceProvider is not null)
+            await _webServiceProvider.DisposeAsync();
+    }
+
+    private sealed class WebOptionsShim : TelemetryOptionsBase { }
+
+    private sealed class EventLogLoggerProvider(List<string> log, Func<Task> onLog) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName) => new EventLogLogger(log, categoryName, onLog);
+        public void Dispose() { }
+    }
+
+    private sealed class EventLogLogger(List<string> log, string category, Func<Task> onLog) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            var shortCategory = category.Contains('.') ? category[(category.LastIndexOf('.') + 1)..] : category;
+            log.Add($"[{DateTime.Now:HH:mm:ss}] [{logLevel}] {shortCategory}: {formatter(state, exception)}");
+            _ = onLog();
+        }
+    }
+}

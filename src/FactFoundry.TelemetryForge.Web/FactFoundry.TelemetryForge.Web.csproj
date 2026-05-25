@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>FactFoundry.TelemetryForge.Web</RootNamespace>
+    <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
+    <Description>ASP.NET and Blazor Server telemetry for TelemetryForge — server-side session tracking with no JavaScript.</Description>
+    <Authors>Fact Foundry LLC</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FactFoundry.TelemetryForge.Core\FactFoundry.TelemetryForge.Core.csproj" />
+  </ItemGroup>
+
+</Project>
