@@ -15,4 +15,11 @@ public sealed class DesktopTelemetryOptions : TelemetryOptionsBase
     /// sessions with license records.
     /// </summary>
     public string? LicenseJwt { get; set; }
+
+    /// <summary>
+    /// Interval in minutes between heartbeat flushes that send feature/error deltas to the server.
+    /// Set to 0 or null to disable periodic heartbeats (only flush at shutdown).
+    /// Defaults to 15 minutes.
+    /// </summary>
+    public int? HeartbeatIntervalMinutes { get; set; } = 15;
 }

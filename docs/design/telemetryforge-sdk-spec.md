@@ -45,7 +45,7 @@ All telemetry requests include the site's API key in the `X-TelemetryForge-Key` 
 The web package has two complementary components:
 
 1. **TelemetryForgeMiddleware** — ASP.NET request pipeline middleware for non-Blazor (traditional) requests. Each HTTP request produces one telemetry event.
-2. **TelemetryForgeCircuitHandler** — Blazor Server circuit lifecycle handler. Tracks navigation within a Blazor circuit and flushes accumulated session data when the circuit closes.
+2. **TelemetryForgeCircuitHandler** — Blazor Server circuit lifecycle handler. Sends a `page_view` event on each navigation and a `circuit_close` event when the circuit disconnects. Also implements `ITelemetryForge` for custom event tracking.
 
 Both are registered via a single `AddTelemetryForge()` call.
 
@@ -55,7 +55,7 @@ For each inbound HTTP request, the middleware:
 
 1. Lets the request pass through the pipeline
 2. After the response, captures telemetry data from `HttpContext`
-3. Posts a single session payload to the server
+3. Posts a single `page_view` event to the server
 
 **Skipped requests:** Static files and framework paths are excluded automatically — `/_framework`, `/_blazor`, `/css`, `/js`, `/lib`, and common static extensions (`.css`, `.js`, `.map`, `.ico`, `.png`, `.jpg`, `.svg`, `.woff`, `.woff2`).
 
@@ -75,13 +75,12 @@ For each inbound HTTP request, the middleware:
 
 ### Circuit Handler (Blazor Server)
 
-For Blazor Server apps, the circuit handler manages a full session lifecycle:
+For Blazor Server apps, the circuit handler sends events throughout the circuit lifecycle:
 
-1. **Circuit opens** — records session start, captures IP/UA/referrer/language from the initial HTTP context
-2. **Navigation events** — consumer calls `TrackNavigation(path)` from a `NavigationManager.LocationChanged` handler to record page visits
-3. **Circuit closes** — computes duration, assembles the page path and status codes, posts the session payload
-
-Thread-safe: page path and status code accumulation uses locking for concurrent access.
+1. **Circuit opens** — captures IP/UA/referrer/language from the initial HTTP context, sends a `page_view` event for the initial page
+2. **Navigation events** — consumer calls `TrackNavigation(path)` from a `NavigationManager.LocationChanged` handler, which sends a `page_view` event immediately
+3. **Custom events** — consumer calls `TrackEvent(name, data)` via the `ITelemetryForge` interface to send `custom` events
+4. **Circuit closes** — sends a `circuit_close` event so the server can calculate last-page duration
 
 ### Configuration
 
@@ -97,26 +96,29 @@ builder.Services.AddTelemetryForge(options =>
 app.UseTelemetryForge(); // register middleware in the request pipeline
 ```
 
-### Current Payload Schema (WebSessionPayload)
+### Payload Schema (WebEventPayload)
 
 ```json
 {
+  "event_type": "page_view",
   "platform": "aspnet | blazor-server",
-  "session_start": "2026-05-25T10:00:00Z",
-  "session_end": "2026-05-25T10:05:00Z",
-  "duration_ms": 300000,
+  "timestamp": "2026-05-25T10:00:00Z",
   "ip_address": "203.0.113.42",
-  "ga_value": null,
+  "ga_value": "GA1.2.123456789.1234567890",
   "user_agent": "Mozilla/5.0 ...",
   "referrer": "https://google.com",
   "language": "en-US",
-  "entry_page": "/",
-  "exit_page": "/about",
-  "page_path": ["/", "/products", "/about"],
-  "status_codes": { "200": 3 },
-  "dnt": false
+  "page_path": "/products",
+  "status_code": 200,
+  "duration_ms": 45,
+  "dnt": false,
+  "event_name": null,
+  "event_data": null,
+  "target_url": null
 }
 ```
+
+Null fields are omitted from the serialized JSON.
 
 ### Identity Resolution (Web)
 
@@ -125,7 +127,7 @@ app.UseTelemetryForge(); // register middleware in the request pipeline
 | `ip_address` | Client IP from HttpContext | Server hashes this to create a daily-salted visitor hash for first-visit detection |
 | `ga_value` | `_ga` cookie (opt-in) | If present, server uses this hash for more stable cross-session identity |
 
-The server performs hashing and geolocation on the IP, then discards the raw address. The SDK sends the raw IP because hashing with a daily salt is a server-side concern.
+The server hashes the IP with a daily-rotating salt for visitor identity, performs geolocation, then discards the raw address. Hashing is a server-side concern — the SDK sends the raw IP so the server can geolocate before discarding it.
 
 ---
 
@@ -147,11 +149,12 @@ The desktop package provides:
 
 `DesktopSessionTracker` is registered as a singleton and manages one session per application lifetime:
 
-1. **Construction** — records `SessionStart`, resolves machine fingerprint and platform info
+1. **Construction** — generates a `session_id` (UUID), records `SessionStart`, resolves machine fingerprint and platform info, starts heartbeat timer if configured
 2. **During session** — consumer calls `TrackFeature("FeatureName")` and `TrackError("Feature", "message")` to record usage
-3. **Shutdown** — consumer calls `FlushAsync()` or lets `IAsyncDisposable`/`IDisposable` auto-flush. The tracker assembles the payload and posts it
+3. **Heartbeat** — on a configurable interval (default 15 minutes), flushes only the feature/error entries accumulated since the last flush. Each flush increments the `sequence` counter
+4. **Shutdown** — consumer calls `FlushAsync()` or lets `IAsyncDisposable`/`IDisposable` auto-flush. Sends any remaining deltas with the final sequence number
 
-Double-flush protection: a `_flushed` flag prevents duplicate submissions. Thread-safe feature/error accumulation via locking.
+Delta tracking: subsequent flushes only include new entries since the last send. If no new data has been recorded, the heartbeat is skipped. Thread-safe feature/error accumulation via locking.
 
 ### Machine Fingerprinting
 
@@ -175,6 +178,7 @@ builder.Services.AddTelemetryForge(options =>
     options.ApiKey     = "your-app-api-key";
     options.AppVersion = "2.1.0";       // auto-populated from entry assembly if omitted
     options.LicenseJwt = "optional-jwt"; // optional, for license tier correlation
+    options.HeartbeatIntervalMinutes = 15; // default: 15. Set to null/0 to disable
 });
 ```
 
@@ -206,28 +210,34 @@ public class EditorViewModel
 await host.Services.GetRequiredService<DesktopSessionTracker>().FlushAsync();
 ```
 
-### Current Payload Schema (DesktopSessionPayload)
+### Payload Schema (DesktopSessionPayload)
+
+Each heartbeat (and the initial flush) sends a payload with only the delta since the last send:
 
 ```json
 {
+  "session_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "sequence": 0,
   "app_version": "2.1.0",
   "platform": "windows",
   "os_version": "Microsoft Windows NT 10.0.22631.0",
   "fingerprint_hash": "a1b2c3d4e5f6...",
   "license_jwt": null,
   "session_start": "2026-05-25T09:00:00Z",
-  "session_end": "2026-05-25T10:30:00Z",
-  "duration_ms": 5400000,
-  "feature_path": ["ModelEditor", "Export", "Settings", "ModelEditor"],
+  "session_end": "2026-05-25T09:15:00Z",
+  "duration_ms": 900000,
+  "feature_path": ["ModelEditor", "Export"],
   "error_events": [
     {
       "Feature": "Export",
       "Message": "Connection timeout",
-      "Timestamp": "2026-05-25T09:45:00Z"
+      "Timestamp": "2026-05-25T09:12:00Z"
     }
   ]
 }
 ```
+
+The `session_id` is stable for the entire app session. The `sequence` starts at 0 and increments with each flush. The `feature_path` and `error_events` contain only new entries since the previous flush.
 
 ### Identity Resolution (Desktop)
 

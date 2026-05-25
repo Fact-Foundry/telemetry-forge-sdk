@@ -7,26 +7,25 @@ using Microsoft.Extensions.Options;
 namespace FactFoundry.TelemetryForge.Web;
 
 /// <summary>
-/// Blazor Server circuit handler that tracks the full session lifecycle —
-/// from circuit open to close — and flushes a single atomic session record.
+/// Blazor Server circuit handler that sends per-navigation <c>page_view</c> events
+/// and a <c>circuit_close</c> event when the circuit disconnects.
+/// Also implements <see cref="ITelemetryForge"/> for custom event tracking within
+/// a Blazor circuit.
 /// </summary>
-public sealed class TelemetryForgeCircuitHandler : CircuitHandler
+public sealed class TelemetryForgeCircuitHandler : CircuitHandler, ITelemetryForge
 {
     private readonly ITelemetryClient _client;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly WebTelemetryOptions _options;
     private readonly ILogger<TelemetryForgeCircuitHandler> _logger;
 
-    private DateTimeOffset _sessionStart;
     private string _ipAddress = string.Empty;
     private string? _gaValue;
     private string _userAgent = string.Empty;
     private string? _referrer;
     private string _language = string.Empty;
     private bool _dnt;
-    private readonly List<string> _pagePath = [];
-    private readonly Dictionary<string, int> _statusCodes = [];
-    private readonly object _lock = new();
+    private string _lastPagePath = "/";
 
     public TelemetryForgeCircuitHandler(
         ITelemetryClient client,
@@ -42,8 +41,6 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler
 
     public override Task OnCircuitOpenedAsync(Circuit circuit, CancellationToken cancellationToken)
     {
-        _sessionStart = DateTimeOffset.UtcNow;
-
         var context = _httpContextAccessor.HttpContext;
         if (context is not null)
         {
@@ -60,28 +57,38 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler
                 _gaValue = gaValue;
             }
 
-            var path = context.Request.Path.Value ?? "/";
-            lock (_lock)
-            {
-                _pagePath.Add(path);
-                IncrementStatus("200");
-            }
+            _lastPagePath = context.Request.Path.Value ?? "/";
+        }
+
+        if (!(_options.RespectDnt && _dnt))
+        {
+            _ = SendEventAsync("page_view", _lastPagePath);
         }
 
         return Task.CompletedTask;
     }
 
     /// <summary>
-    /// Records a page navigation within the Blazor circuit session.
+    /// Records a page navigation within the Blazor circuit and sends a <c>page_view</c> event.
     /// Call this from a <c>NavigationManager.LocationChanged</c> handler.
     /// </summary>
     public void TrackNavigation(string path)
     {
-        lock (_lock)
-        {
-            _pagePath.Add(path);
-            IncrementStatus("200");
-        }
+        _lastPagePath = path;
+
+        if (_options.RespectDnt && _dnt)
+            return;
+
+        _ = SendEventAsync("page_view", path);
+    }
+
+    /// <inheritdoc />
+    public void TrackEvent(string eventName, Dictionary<string, object>? data = null)
+    {
+        if (_options.RespectDnt && _dnt)
+            return;
+
+        _ = SendEventAsync("custom", _lastPagePath, eventName, data);
     }
 
     public override async Task OnCircuitClosedAsync(Circuit circuit, CancellationToken cancellationToken)
@@ -89,45 +96,42 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler
         if (_options.RespectDnt && _dnt)
             return;
 
-        var sessionEnd = DateTimeOffset.UtcNow;
+        await SendEventAsync("circuit_close", _lastPagePath, cancellationToken: cancellationToken);
 
-        List<string> pagePath;
-        Dictionary<string, int> statusCodes;
-
-        lock (_lock)
-        {
-            pagePath = [.. _pagePath];
-            statusCodes = new Dictionary<string, int>(_statusCodes);
-        }
-
-        var payload = new WebSessionPayload
-        {
-            Platform = "blazor-server",
-            SessionStart = _sessionStart,
-            SessionEnd = sessionEnd,
-            DurationMs = (long)(sessionEnd - _sessionStart).TotalMilliseconds,
-            IpAddress = _ipAddress,
-            GaValue = _gaValue,
-            UserAgent = _userAgent,
-            Referrer = _referrer,
-            Language = _language,
-            EntryPage = pagePath.Count > 0 ? pagePath[0] : "/",
-            ExitPage = pagePath.Count > 0 ? pagePath[^1] : "/",
-            PagePath = pagePath,
-            StatusCodes = statusCodes,
-            Dnt = _dnt
-        };
-
-        await _client.SendAsync("/api/telemetry/web", payload, cancellationToken);
-        _logger.LogDebug(
-            "Blazor circuit telemetry flushed ({DurationMs}ms, {PageCount} pages)",
-            payload.DurationMs, pagePath.Count);
+        _logger.LogDebug("Blazor circuit close event sent for {Path}", _lastPagePath);
     }
 
-    private void IncrementStatus(string code)
+    private async Task SendEventAsync(
+        string eventType,
+        string pagePath,
+        string? eventName = null,
+        IReadOnlyDictionary<string, object>? eventData = null,
+        CancellationToken cancellationToken = default)
     {
-        _statusCodes.TryGetValue(code, out var count);
-        _statusCodes[code] = count + 1;
+        try
+        {
+            var payload = new WebEventPayload
+            {
+                EventType = eventType,
+                Platform = "blazor-server",
+                Timestamp = DateTimeOffset.UtcNow,
+                IpAddress = _ipAddress,
+                GaValue = _gaValue,
+                UserAgent = _userAgent,
+                Referrer = _referrer,
+                Language = _language,
+                PagePath = pagePath,
+                Dnt = _dnt,
+                EventName = eventName,
+                EventData = eventData
+            };
+
+            await _client.SendAsync("/api/telemetry/web", payload, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Failed to send {EventType} event for {Path}", eventType, pagePath);
+        }
     }
 
     private static string GetClientIp(HttpContext context)

@@ -7,9 +7,8 @@ using FactFoundry.TelemetryForge.Web.Models;
 namespace FactFoundry.TelemetryForge.Web;
 
 /// <summary>
-/// ASP.NET middleware that captures request telemetry and posts session payloads
-/// to the TelemetryForge Server. For non-Blazor requests, each request is treated
-/// as a single-page session.
+/// ASP.NET middleware that captures per-request telemetry and posts a single
+/// <c>page_view</c> event to the TelemetryForge Server for each HTTP request.
 /// </summary>
 public sealed class TelemetryForgeMiddleware
 {
@@ -38,36 +37,27 @@ public sealed class TelemetryForgeMiddleware
             return;
         }
 
-        var sessionStart = DateTimeOffset.UtcNow;
         var stopwatch = Stopwatch.StartNew();
 
         await _next(context);
 
         stopwatch.Stop();
-        var sessionEnd = DateTimeOffset.UtcNow;
 
         try
         {
-            var path = context.Request.Path.Value ?? "/";
-
-            var payload = new WebSessionPayload
+            var payload = new WebEventPayload
             {
+                EventType = "page_view",
                 Platform = "aspnet",
-                SessionStart = sessionStart,
-                SessionEnd = sessionEnd,
-                DurationMs = stopwatch.ElapsedMilliseconds,
+                Timestamp = DateTimeOffset.UtcNow,
                 IpAddress = GetClientIp(context),
                 GaValue = GetGaValue(context),
                 UserAgent = context.Request.Headers.UserAgent.ToString(),
                 Referrer = context.Request.Headers.Referer.ToString() is { Length: > 0 } r ? r : null,
                 Language = context.Request.Headers.AcceptLanguage.ToString(),
-                EntryPage = path,
-                ExitPage = path,
-                PagePath = [path],
-                StatusCodes = new Dictionary<string, int>
-                {
-                    [context.Response.StatusCode.ToString()] = 1
-                },
+                PagePath = context.Request.Path.Value ?? "/",
+                StatusCode = context.Response.StatusCode,
+                DurationMs = stopwatch.ElapsedMilliseconds,
                 Dnt = HasDnt(context)
             };
 
