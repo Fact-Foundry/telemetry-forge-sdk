@@ -22,7 +22,8 @@ public class DesktopSessionTrackerTests
         {
             Endpoint = "https://telemetry.example.com",
             ApiKey = "tfrg_live_test",
-            AppVersion = "1.0.0"
+            AppVersion = "1.0.0",
+            HeartbeatIntervalMinutes = null
         });
 
         var logger = Substitute.For<ILogger<DesktopSessionTracker>>();
@@ -63,7 +64,7 @@ public class DesktopSessionTrackerTests
     }
 
     [Fact]
-    public async Task FlushAsync_CalledTwice_OnlySendsOnce()
+    public async Task FlushAsync_CalledTwiceWithNoNewData_OnlySendsOnce()
     {
         _tracker.TrackFeature("Dashboard");
 
@@ -73,6 +74,47 @@ public class DesktopSessionTrackerTests
         await _client.Received(1).SendAsync(
             Arg.Any<string>(),
             Arg.Any<DesktopSessionPayload>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task FlushAsync_SendsDeltaOnSubsequentCalls()
+    {
+        _tracker.TrackFeature("Dashboard");
+        await _tracker.FlushAsync();
+
+        _tracker.TrackFeature("Editor");
+        await _tracker.FlushAsync();
+
+        await _client.Received(1).SendAsync(
+            "/api/telemetry/desktop",
+            Arg.Is<DesktopSessionPayload>(p =>
+                p.Sequence == 0 &&
+                p.FeaturePath.Count == 1 &&
+                p.FeaturePath[0] == "Dashboard"),
+            Arg.Any<CancellationToken>());
+
+        await _client.Received(1).SendAsync(
+            "/api/telemetry/desktop",
+            Arg.Is<DesktopSessionPayload>(p =>
+                p.Sequence == 1 &&
+                p.FeaturePath.Count == 1 &&
+                p.FeaturePath[0] == "Editor"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task FlushAsync_IncludesSessionIdAndSequence()
+    {
+        _tracker.TrackFeature("Startup");
+
+        await _tracker.FlushAsync();
+
+        await _client.Received(1).SendAsync(
+            "/api/telemetry/desktop",
+            Arg.Is<DesktopSessionPayload>(p =>
+                !string.IsNullOrEmpty(p.SessionId) &&
+                p.Sequence == 0),
             Arg.Any<CancellationToken>());
     }
 
@@ -101,6 +143,38 @@ public class DesktopSessionTrackerTests
         await _client.Received(1).SendAsync(
             "/api/telemetry/desktop",
             Arg.Is<DesktopSessionPayload>(p => p.DurationMs >= 0),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task FlushAsync_SequenceIncrementsAcrossFlushes()
+    {
+        _tracker.TrackFeature("A");
+        await _tracker.FlushAsync();
+
+        _tracker.TrackFeature("B");
+        await _tracker.FlushAsync();
+
+        _tracker.TrackFeature("C");
+        await _tracker.FlushAsync();
+
+        await _client.Received(1).SendAsync(
+            "/api/telemetry/desktop",
+            Arg.Is<DesktopSessionPayload>(p => p.Sequence == 2),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task FlushAsync_InitialFlushSendsEvenWithNoData()
+    {
+        await _tracker.FlushAsync();
+
+        await _client.Received(1).SendAsync(
+            "/api/telemetry/desktop",
+            Arg.Is<DesktopSessionPayload>(p =>
+                p.Sequence == 0 &&
+                p.FeaturePath.Count == 0 &&
+                p.ErrorEvents.Count == 0),
             Arg.Any<CancellationToken>());
     }
 }

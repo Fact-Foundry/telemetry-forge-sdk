@@ -1,720 +1,340 @@
-# TelemetryForge — Architecture Specification
+# TelemetryForge SDK — Design Specification
 
 *A Fact Foundry product*
 
 ## Overview
 
-A two-piece system for tracking web, desktop, and mobile application telemetry entirely server-side, with no JavaScript, no cookies set by the library, and no cross-site tracking. Designed as a privacy-first, GDPR-friendly alternative to Google Analytics for .NET applications.
+Client-side NuGet packages that .NET applications install to send telemetry data to a TelemetryForge Server instance. Designed as privacy-first, GDPR-friendly libraries with zero UI, no JavaScript dependencies, no cookies set by the library, and no cross-site tracking.
 
-The system ships as three NuGet packages targeting different hosting contexts, all reporting to a shared central server with a built-in Blazor admin UI.
+**Packages:**
 
-**Package family:**
-```
-FactFoundry.TelemetryForge.Web
-FactFoundry.TelemetryForge.Desktop
-FactFoundry.TelemetryForge.Mobile
-FactFoundry.TelemetryForge.Server
-```
+| Package | Target | License |
+|---|---|---|
+| `FactFoundry.TelemetryForge.Web` | ASP.NET / Blazor Server web apps | MIT |
+| `FactFoundry.TelemetryForge.Desktop` | WPF / WinForms / Avalonia / console apps | MIT |
+| `FactFoundry.TelemetryForge.Mobile` | .NET MAUI (iOS / Android) | MIT (deferred) |
 
----
-
-## System Architecture
-
-```
-Web App A  (FactFoundry.TelemetryForge.Web)     ──→
-Web App B  (FactFoundry.TelemetryForge.Web)     ──→
-Desktop A  (FactFoundry.TelemetryForge.Desktop) ──→  FactFoundry.TelemetryForge.Server  ──→  Fabric Eventhouse
-Desktop B  (FactFoundry.TelemetryForge.Desktop) ──→          ↕                          ──→  Local Database
-Mobile A   (FactFoundry.TelemetryForge.Mobile)  ──→    visitor_hashes DB                ──→  Any subscriber
-Any Platform (raw REST call)                    ──→
-```
-
-The system consists of two independently deployable pieces:
-
-- **Piece 1 — NuGet Packages**: Lightweight, stateless middleware installed in consuming applications. Three variants — web, desktop, and mobile.
-- **Piece 2 — FactFoundry.TelemetryForge.Server**: A minimal ASP.NET API with a built-in Blazor admin UI that receives payloads, resolves visitor identity, enriches records, and forwards events downstream.
+The server (`FactFoundry.TelemetryForge.Server`, AGPL-3.0) is a separate repository.
 
 ---
 
-## Package 1 — `FactFoundry.TelemetryForge.Web`
+## Design Principles
 
-### Use Case
+1. **Never crash the host** — telemetry failures are logged and swallowed. No exception ever escapes the SDK.
+2. **Privacy by default** — raw IP addresses are hashed before transmission. Machine fingerprints are SHA-256 hashed client-side. DNT headers are respected.
+3. **Minimal dependencies** — prefer .NET built-in APIs. Every transitive dependency becomes a cost for consumers.
+4. **Self-contained packages** — each package ships its own HTTP client, interfaces, and options. No shared "core" library to version-lock consumers.
+5. **Resilient delivery** — HTTP clients use `AddStandardResilienceHandler()` for automatic retry, timeout, and circuit-breaker policies.
 
-ASP.NET and Blazor web applications. Identity is ephemeral and inferred from request data — there is no persistent machine identifier available server-side in a web context.
+---
 
-### Responsibilities
+## Authentication
 
-- Hook into the ASP.NET HTTP pipeline
-- Capture session data from `HttpContext`
-- Track Blazor Server circuit lifetime for true session boundaries (where applicable)
-- Hash IP address and read `_ga` cookie for identity resolution
-- POST session payload to `/api/telemetry/web` on the central server
-- No database dependency
-- No JavaScript emitted to the client
+All telemetry requests include the site's API key in the `X-TelemetryForge-Key` HTTP header. API keys are generated and managed through the TelemetryForge Server admin UI.
 
-### Consumer Setup
+---
+
+## Web Package
+
+**NuGet:** `FactFoundry.TelemetryForge.Web`
+**Target:** ASP.NET Core / Blazor Server applications
+**Endpoint:** `POST /api/telemetry/web`
+
+### Architecture
+
+The web package has two complementary components:
+
+1. **TelemetryForgeMiddleware** — ASP.NET request pipeline middleware for non-Blazor (traditional) requests. Each HTTP request produces one telemetry event.
+2. **TelemetryForgeCircuitHandler** — Blazor Server circuit lifecycle handler. Sends a `page_view` event on each navigation and a `circuit_close` event when the circuit disconnects. Also implements `ITelemetryForge` for custom event tracking.
+
+Both are registered via a single `AddTelemetryForge()` call.
+
+### Middleware (non-Blazor requests)
+
+For each inbound HTTP request, the middleware:
+
+1. Lets the request pass through the pipeline
+2. After the response, captures telemetry data from `HttpContext`
+3. Posts a single `page_view` event to the server
+
+**Skipped requests:** Static files and framework paths are excluded automatically — `/_framework`, `/_blazor`, `/css`, `/js`, `/lib`, and common static extensions (`.css`, `.js`, `.map`, `.ico`, `.png`, `.jpg`, `.svg`, `.woff`, `.woff2`).
+
+**Data captured from HttpContext:**
+
+| Field | Source |
+|---|---|
+| IP address | `X-Forwarded-For` header (first), then `RemoteIpAddress` |
+| User-Agent | `User-Agent` header |
+| Referrer | `Referer` header |
+| Language | `Accept-Language` header (first value) |
+| Page path | `HttpContext.Request.Path` |
+| Status code | `HttpContext.Response.StatusCode` |
+| DNT | `DNT` header |
+| GA cookie | `_ga` cookie value (only if `UseGaCookie` is enabled) |
+| Duration | `Stopwatch` around request pipeline |
+
+### Circuit Handler (Blazor Server)
+
+For Blazor Server apps, the circuit handler sends events throughout the circuit lifecycle:
+
+1. **Circuit opens** — captures IP/UA/referrer/language from the initial HTTP context, sends a `page_view` event for the initial page
+2. **Navigation events** — consumer calls `TrackNavigation(path)` from a `NavigationManager.LocationChanged` handler, which sends a `page_view` event immediately
+3. **Custom events** — consumer calls `TrackEvent(name, data)` via the `ITelemetryForge` interface to send `custom` events
+4. **Circuit closes** — sends a `circuit_close` event so the server can calculate last-page duration
+
+### Configuration
 
 ```csharp
 builder.Services.AddTelemetryForge(options =>
 {
-    options.Endpoint = "https://telemetry.yourdomain.com";
-    options.ApiKey   = "your-site-api-key";
-    options.SiteName = "My Blazor App";
+    options.Endpoint   = "https://telemetry.yourdomain.com";
+    options.ApiKey     = "your-site-api-key";
+    options.RespectDnt = true;   // default: true — skip tracking if DNT header is set
+    options.UseGaCookie = false; // default: false — hash _ga cookie for cross-session identity
 });
 
-app.UseTelemetryForge();
+app.UseTelemetryForge(); // register middleware in the request pipeline
 ```
 
-### Configuration Options
-
-```csharp
-public class WebTelemetryOptions
-{
-    public string Endpoint    { get; set; }         // URL of TelemetryForge.Server
-    public string ApiKey      { get; set; }         // Per-site API key
-    public string SiteName    { get; set; }         // Human-readable site identifier
-    public bool   RespectDnt  { get; set; } = true; // Honor Do Not Track header
-}
-```
-
-### Data Captured from HttpContext
-
-| Field | Source | Notes |
-|---|---|---|
-| User-Agent | Request header | Browser, OS, device type |
-| Referrer | `Referer` header | Traffic source |
-| Accept-Language | Request header | Locale/language |
-| IP (hashed) | `X-Forwarded-For` / connection | Never stored raw |
-| `_ga` value (hashed) | Request cookie | Only if present; never stored raw |
-| Request path | URL | Page visited |
-| Response status | Pipeline | Error tracking |
-| Response time | Middleware brackets | Performance |
-| DNT flag | `DNT` header | Respected if configured |
-
-### Blazor Server Circuit Tracking
-
-Blazor Server maintains a persistent SignalR connection per user. The library hooks into circuit lifetime events to track the complete session in memory and write it as a single atomic record on circuit close:
-
-- **Circuit open** → session starts, begin recording navigation via `NavigationManager`
-- **Navigation events** → append to in-memory session path
-- **Circuit close** → session ends, flush complete record to central server
-
-This provides a true session boundary without reconstructing sessions from fragments after the fact. Circuit closes on tab close, navigation away, or inactivity timeout (~3 minutes by default, configurable).
-
-### Web Payload Schema
+### Payload Schema (WebEventPayload)
 
 ```json
 {
-  "site_id":        "string (from API key lookup)",
-  "platform":       "string (blazor-server | blazor-wasm | aspnet | other)",
-  "session_start":  "ISO 8601 datetime",
-  "session_end":    "ISO 8601 datetime",
-  "duration_ms":    "integer",
-  "ip_hash":        "string (SHA-256, daily rotating salt)",
-  "ga_hash":        "string | null (SHA-256, no salt)",
-  "user_agent":     "string",
-  "referrer":       "string | null",
-  "language":       "string",
-  "entry_page":     "string",
-  "exit_page":      "string",
-  "page_path":      ["string"],
-  "status_codes":   {"200": 4, "404": 1},
-  "dnt":            "boolean"
+  "event_type": "page_view",
+  "platform": "aspnet | blazor-server",
+  "timestamp": "2026-05-25T10:00:00Z",
+  "ip_address": "203.0.113.42",
+  "ga_value": "GA1.2.123456789.1234567890",
+  "user_agent": "Mozilla/5.0 ...",
+  "referrer": "https://google.com",
+  "language": "en-US",
+  "page_path": "/products",
+  "status_code": 200,
+  "duration_ms": 45,
+  "dnt": false,
+  "event_name": null,
+  "event_data": null,
+  "target_url": null
 }
 ```
 
-### Identity — Web
+Null fields are omitted from the serialized JSON.
 
-Web identity is ephemeral and inferred. There is no persistent machine identifier available without client-side code, so identity is approximated through two layers:
+### Identity Resolution (Web)
 
-**Layer 1 — Long-term (`visitor_hashes` table on central server)**
-- SHA-256 hash of IP or `_ga` value, no salt
-- Used only to set `is_first_visit` flag
-- No behavioral data — purely a lookup key
+| Identifier | Source | Purpose |
+|---|---|---|
+| `ip_address` | Client IP from HttpContext | Server hashes this to create a daily-salted visitor hash for first-visit detection |
+| `ga_value` | `_ga` cookie (opt-in) | If present, server uses this hash for more stable cross-session identity |
 
-**Layer 2 — Session (analytics records)**
-- IP hashed with a daily rotating salt
-- Provides within-session continuity
-- Salt discarded at midnight — permanently irreversible
-- Returning visitor detection handled by Layer 1, not the salt
-
-#### Returning Visitor Tradeoff
-
-| Approach | Session tracking | Return visitor tracking | GDPR risk |
-|---|---|---|---|
-| Raw IP stored | ✅ | ✅ | ❌ High |
-| Static hash | ✅ | ✅ | ⚠️ Moderate |
-| Daily rotating salt | ✅ | ❌ | ✅ Low |
-| IP discarded entirely | ❌ | ❌ | ✅ Lowest |
-
-Returning visitor detection relies on the `visitor_hashes` lookup rather than the session salt, giving the `is_first_visit` flag without long-term behavioral tracking.
+The server hashes the IP with a daily-rotating salt for visitor identity, performs geolocation, then discards the raw address. Hashing is a server-side concern — the SDK sends the raw IP so the server can geolocate before discarding it.
 
 ---
 
-## Package 2 — `FactFoundry.TelemetryForge.Desktop`
+## Desktop Package
 
-### Use Case
+**NuGet:** `FactFoundry.TelemetryForge.Desktop`
+**Target:** WPF, WinForms, Avalonia, console applications
+**Endpoint:** `POST /api/telemetry/desktop`
 
-Desktop applications built on .NET — MAUI (desktop targets), Photino, WPF, WinForms, or any hosted Blazor desktop context. Identity is persistent and concrete via machine fingerprinting.
+### Architecture
 
-### Responsibilities
+The desktop package provides:
 
-- Capture machine fingerprint at startup
-- Track application session lifetime (start to close)
-- Record feature/component navigation within the app
-- POST session payload to `/api/telemetry/desktop` on the central server
-- Optionally integrate with an existing licensing JWT
-- No JavaScript dependency
+1. **DesktopSessionTracker** — singleton that tracks the session lifecycle from app start to shutdown
+2. **MachineFingerprint** — platform-specific machine identity, SHA-256 hashed before transmission
+3. **IFeatureTracker** — interface for recording feature navigation and errors throughout the session
 
-### Consumer Setup
+### Session Tracking
+
+`DesktopSessionTracker` is registered as a singleton and manages one session per application lifetime:
+
+1. **Construction** — generates a `session_id` (UUID), records `SessionStart`, resolves machine fingerprint and platform info, starts heartbeat timer if configured
+2. **During session** — consumer calls `TrackFeature("FeatureName")` and `TrackError("Feature", "message")` to record usage
+3. **Heartbeat** — on a configurable interval (default 15 minutes), flushes only the feature/error entries accumulated since the last flush. Each flush increments the `sequence` counter
+4. **Shutdown** — consumer calls `FlushAsync()` or lets `IAsyncDisposable`/`IDisposable` auto-flush. Sends any remaining deltas with the final sequence number
+
+Delta tracking: subsequent flushes only include new entries since the last send. If no new data has been recorded, the heartbeat is skipped. Thread-safe feature/error accumulation via locking.
+
+### Machine Fingerprinting
+
+Platform-specific machine identity resolution:
+
+| Platform | Source |
+|---|---|
+| Windows | `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid` (Registry) |
+| Linux | `/etc/machine-id` file |
+| macOS | `ioreg -rd1 -c IOPlatformExpertDevice` → `IOPlatformUUID` |
+| Fallback | `fallback:{MachineName}:{UserName}:{ProcessorCount}` |
+
+The raw identifier is SHA-256 hashed before storage or transmission. The hash is cached after first computation.
+
+### Configuration
 
 ```csharp
 builder.Services.AddTelemetryForge(options =>
 {
     options.Endpoint   = "https://telemetry.yourdomain.com";
     options.ApiKey     = "your-app-api-key";
-    options.AppName    = "My Desktop App";
-    options.AppVersion = Assembly.GetExecutingAssembly()
-                                 .GetName().Version?.ToString();
+    options.AppVersion = "2.1.0";       // auto-populated from entry assembly if omitted
+    options.LicenseJwt = "optional-jwt"; // optional, for license tier correlation
+    options.HeartbeatIntervalMinutes = 15; // default: 15. Set to null/0 to disable
 });
 ```
 
-### Configuration Options
+### Usage
 
 ```csharp
-public class DesktopTelemetryOptions
+// Inject the feature tracker anywhere in the app
+public class EditorViewModel
 {
-    public string Endpoint     { get; set; }  // URL of TelemetryForge.Server
-    public string ApiKey       { get; set; }  // Per-app API key
-    public string AppName      { get; set; }  // Human-readable app identifier
-    public string AppVersion   { get; set; }  // Populated automatically or manually
-    public string LicenseJwt   { get; set; }  // Optional — existing license JWT
+    private readonly IFeatureTracker _tracker;
+
+    public EditorViewModel(IFeatureTracker tracker)
+    {
+        _tracker = tracker;
+        _tracker.TrackFeature("ModelEditor");
+    }
+
+    public void Export()
+    {
+        try { /* ... */ }
+        catch (Exception ex)
+        {
+            _tracker.TrackError("Export", ex.Message);
+        }
+    }
 }
+
+// On app shutdown — flush the session
+await host.Services.GetRequiredService<DesktopSessionTracker>().FlushAsync();
 ```
 
-### Machine Fingerprinting
+### Payload Schema (DesktopSessionPayload)
 
-Platform-specific stable machine identifiers:
-
-| Platform | Source | Stability |
-|---|---|---|
-| Windows | Registry `MachineGuid` | ✅ Stable |
-| Linux | `/etc/machine-id` | ✅ Stable |
-| macOS | `IOPlatformUUID` | ✅ Stable |
-
-The raw identifier is hashed (SHA-256) before leaving the machine. The raw value is never transmitted.
-
-### Data Captured
-
-| Field | Source | Notes |
-|---|---|---|
-| Fingerprint hash | Platform-specific | Stable machine identity |
-| Platform | Runtime detection | `windows`, `linux`, `macos` |
-| OS version | `Environment.OSVersion` | |
-| App version | Assembly version | |
-| Session start/end | App lifetime events | |
-| Duration | Calculated | |
-| Feature path | Navigation tracking | Components/screens visited |
-| Error events | Exception handler | Optional |
-
-### Desktop Payload Schema
+Each heartbeat (and the initial flush) sends a payload with only the delta since the last send:
 
 ```json
 {
-  "app_id":             "string (from API key lookup)",
-  "app_name":           "string",
-  "app_version":        "string",
-  "platform":           "string (windows | linux | macos)",
-  "os_version":         "string",
-  "fingerprint_hash":   "string (SHA-256 of machine identifier)",
-  "license_jwt":        "string | null (optional)",
-  "session_start":      "ISO 8601 datetime",
-  "session_end":        "ISO 8601 datetime",
-  "duration_ms":        "integer",
-  "feature_path":       ["string"],
-  "error_events":       [{"feature": "string", "message": "string", "timestamp": "ISO 8601"}]
+  "session_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "sequence": 0,
+  "app_version": "2.1.0",
+  "platform": "windows",
+  "os_version": "Microsoft Windows NT 10.0.22631.0",
+  "fingerprint_hash": "a1b2c3d4e5f6...",
+  "license_jwt": null,
+  "session_start": "2026-05-25T09:00:00Z",
+  "session_end": "2026-05-25T09:15:00Z",
+  "duration_ms": 900000,
+  "feature_path": ["ModelEditor", "Export"],
+  "error_events": [
+    {
+      "Feature": "Export",
+      "Message": "Connection timeout",
+      "Timestamp": "2026-05-25T09:12:00Z"
+    }
+  ]
 }
 ```
 
-### Optional Licensing Integration
+The `session_id` is stable for the entire app session. The `sequence` starts at 0 and increments with each flush. The `feature_path` and `error_events` contain only new entries since the previous flush.
 
-If the consuming app uses a JWT-based licensing system, passing the JWT allows the central server to correlate analytics sessions with license records:
+### Identity Resolution (Desktop)
 
-- Trial vs paid user behavior segmentation
-- Version adoption across license tiers
-- Churn signal detection (active license, declining usage)
-
-This is entirely optional — `FactFoundry.TelemetryForge.Desktop` functions fully without a licensing system.
+| Identifier | Source | Purpose |
+|---|---|---|
+| `fingerprint_hash` | SHA-256 of platform machine ID | First-install detection. Stable across app restarts on the same machine |
 
 ---
 
-## Package 3 — `FactFoundry.TelemetryForge.Mobile`
+## Mobile Package (Deferred)
 
-### Use Case
+**NuGet:** `FactFoundry.TelemetryForge.Mobile`
+**Target:** .NET MAUI (iOS / Android)
+**Endpoint:** `POST /api/telemetry/mobile`
+**Status:** Spec only — implementation deferred. Lower priority than Web and Desktop.
 
-Mobile applications built on MAUI targeting iOS and Android. Identity is best-effort — mobile platform restrictions make stable fingerprinting less reliable than desktop.
+### Planned Architecture
 
-### Responsibilities
+Similar to the Desktop package but with mobile-specific identity resolution:
 
-- Capture best-available device identifier at startup
-- Track application session lifetime
-- Record feature/screen navigation
-- POST session payload to `/api/telemetry/mobile` on the central server
-- Respect platform privacy settings (iOS App Tracking Transparency, Android permissions)
-
-### Consumer Setup
-
-```csharp
-builder.Services.AddTelemetryForge(options =>
-{
-    options.Endpoint   = "https://telemetry.yourdomain.com";
-    options.ApiKey     = "your-mobile-api-key";
-    options.AppName    = "My Mobile App";
-    options.AppVersion = AppInfo.VersionString;
-});
-```
-
-### Mobile Device Identification
-
-| Platform | Source | Stability |
+| Platform | Identifier | Hash Type |
 |---|---|---|
-| iOS | `UIDevice.identifierForVendor` | ⚠️ Resets on app reinstall |
-| Android | `Settings.Secure.ANDROID_ID` | ⚠️ Resets on factory reset; per-app on Android 8+ |
+| iOS | `UIDevice.identifierForVendor` | `vendor_id` |
+| Android | `Settings.Secure.ANDROID_ID` | `android_id` |
+| Fallback | Client-generated GUID (persisted to app storage) | `generated_guid` |
 
-Because mobile identifiers are less stable, `is_first_install` is best-effort rather than guaranteed. The library generates a fallback GUID stored in app-local storage if the platform identifier is unavailable.
-
-### App Store Compliance
-
-- iOS: Does not use `advertisingIdentifier` (IDFA) — no ATT prompt required
-- Android: Does not request `AD_ID` permission
-- Collects only operational telemetry — no advertising data
-
-### Mobile Payload Schema
+### Planned Payload Schema (MobileSessionPayload)
 
 ```json
 {
-  "app_id":           "string (from API key lookup)",
-  "app_name":         "string",
-  "app_version":      "string",
-  "platform":         "string (ios | android)",
-  "os_version":       "string",
-  "device_hash":      "string (SHA-256 of best-available identifier)",
-  "device_hash_type": "string (vendor-id | android-id | generated-guid)",
-  "session_start":    "ISO 8601 datetime",
-  "session_end":      "ISO 8601 datetime",
-  "duration_ms":      "integer",
-  "feature_path":     ["string"],
-  "error_events":     [{"feature": "string", "message": "string", "timestamp": "ISO 8601"}]
+  "app_version": "1.0.0",
+  "platform": "iOS",
+  "os_version": "17.5",
+  "device_hash": "d4e5f6a7b8c9...",
+  "device_hash_type": "vendor_id",
+  "session_start": "2026-05-25T14:00:00Z",
+  "session_end": "2026-05-25T14:03:00Z",
+  "duration_ms": 180000,
+  "feature_path": ["Dashboard", "Scanner"],
+  "error_events": []
 }
 ```
 
 ---
 
-## FactFoundry.TelemetryForge.Server
+## Privacy and GDPR
 
-### Responsibilities
+### What the SDK collects
 
-- Receive payloads from all three packages via separate endpoints
-- Authenticate requests via per-site/per-app API keys
-- Perform `visitor_hashes` lookup to resolve `is_first_visit` / `is_first_install`
-- Enrich records (geolocation from IP, User-Agent parsing, etc.)
-- Publish enriched events to configured downstream subscribers
-- Maintain the `visitor_hashes` table — the only stateful dependency in the system
-- Serve the built-in Blazor admin UI
+| Data | Web | Desktop | Mobile |
+|---|---|---|---|
+| IP address (raw, for server-side hashing) | Yes | No | No |
+| Machine fingerprint (SHA-256 hash) | No | Yes | No |
+| Device identifier (SHA-256 hash) | No | No | Yes |
+| User-Agent string | Yes | No | No |
+| Page / feature paths | Yes | Yes | Yes |
+| Error messages | No | Yes | Yes |
+| Cookies | Only `_ga` if opted in | No | No |
 
-### Endpoints
+### What the SDK never collects
 
-| Endpoint | Package | Description |
-|---|---|---|
-| `POST /api/telemetry/web` | `TelemetryForge.Web` | Web session payloads |
-| `POST /api/telemetry/desktop` | `TelemetryForge.Desktop` | Desktop session payloads |
-| `POST /api/telemetry/mobile` | `TelemetryForge.Mobile` | Mobile session payloads |
-| `POST /api/sites/register` | Admin | Register a new site/app, receive API key |
+- Personally identifiable information (names, emails, account IDs)
+- Form input or page content
+- Keystroke or mouse tracking data
+- Cross-site tracking identifiers
+- Unrelated cookies or local storage
 
-### Deployment Options
+### DNT Support
 
-The server endpoint is a configurable URL in each package. All of these are valid:
-
-```csharp
-// Same machine
-options.Endpoint = "http://localhost:5100";
-
-// Local network
-options.Endpoint = "http://192.168.1.50:5100";
-
-// Hosted
-options.Endpoint = "https://telemetry.yourdomain.com";
-
-// Docker
-options.Endpoint = "http://telemetryforge:5100";
-```
-
-### API Security
-
-**Key Generation**
-- Generated using `RandomNumberGenerator` — cryptographically secure, never `Random` or GUID
-- Formatted with an identifiable prefix:
-```
-tfrg_live_a3f8c2d1e4b7f9a2c5d8e1f4b7a2c5d8
-```
-- Raw key shown to the developer exactly once at registration — never retrievable again
-- Server immediately bcrypt hashes the key and stores only the hash
-
-**Authentication — API key per site/app**
-- Keys are stored as bcrypt hashes in the server database, never plain text
-- Key transmitted in request header, never in the URL:
-
-```
-X-TelemetryForge-Key: tfrg_live_a3f8c2d1e4b7f9a2c5d8e1f4b7a2c5d8
-```
-
-**Rate limiting**
-- Per API key limits via ASP.NET built-in rate limiting middleware
-- Protects against malicious use and runaway client bugs
-
-**Transport**
-- HTTPS enforced on public deployments
-- HTTP valid for localhost/LAN only
-
-**Payload validation**
-- Required fields enforced
-- Values validated within reasonable bounds
-- Malformed payloads rejected with `400 Bad Request`
-
-### Site/App Registration Flow
-
-```
-1. Developer deploys FactFoundry.TelemetryForge.Server
-2. Completes first-run wizard in admin UI
-3. Registers a new site or app (name, type: web | desktop | mobile)
-4. Server generates unique API key — shown once, copy to clipboard
-5. Developer adds key to consuming app config
-6. Server validates key and routes to correct handler on every request
-```
-
-### Registration Table
-
-| Column | Type | Notes |
-|---|---|---|
-| `site_id` | string | Generated on registration |
-| `name` | string | Human-readable |
-| `type` | enum | `web`, `desktop`, `mobile` |
-| `api_key_hash` | string | bcrypt hash of issued key |
-| `registered_at` | datetime | |
-
-### visitor_hashes Table
-
-The single stateful lookup table. Shared across all payload types.
-
-| Column | Type | Notes |
-|---|---|---|
-| `hash` | string | SHA-256 of IP, `_ga`, fingerprint, or device ID |
-| `hash_type` | enum | `ip`, `ga`, `fingerprint`, `vendor-id`, `android-id`, `generated-guid` |
-| `source_type` | enum | `web`, `desktop`, `mobile` |
-| `first_seen` | datetime | |
-| `site_id` | string | |
-
-No behavioral data — purely an existence check for `is_first_visit` / `is_first_install`.
-
-### IP Processing Pipeline (Web Only)
-
-```
-Receive raw IP
-      ↓
-Geolocate → store country/region only
-      ↓
-Hash with daily rotating salt → session_hash (stored)
-      ↓
-Hash without salt → lookup in visitor_hashes → set is_first_visit
-      ↓
-Discard raw IP — never persisted
-```
-
-### Enriched Event Schema (Web)
-
-```json
-{
-  "site_id":        "string",
-  "site_name":      "string",
-  "platform":       "string",
-  "session_start":  "ISO 8601",
-  "session_end":    "ISO 8601",
-  "duration_ms":    "integer",
-  "session_hash":   "string (daily-salted)",
-  "is_first_visit": "boolean",
-  "country":        "string",
-  "region":         "string",
-  "browser":        "string (parsed from User-Agent)",
-  "os":             "string (parsed from User-Agent)",
-  "device_type":    "string (desktop | mobile | tablet | bot)",
-  "referrer":       "string | null",
-  "language":       "string",
-  "entry_page":     "string",
-  "exit_page":      "string",
-  "page_path":      ["string"],
-  "page_count":     "integer",
-  "status_codes":   {"200": 4, "404": 1}
-}
-```
-
-### Enriched Event Schema (Desktop)
-
-```json
-{
-  "app_id":             "string",
-  "app_name":           "string",
-  "app_version":        "string",
-  "platform":           "string",
-  "os_version":         "string",
-  "fingerprint_hash":   "string",
-  "is_first_install":   "boolean",
-  "license_tier":       "string | null (trial | personal | commercial)",
-  "session_start":      "ISO 8601",
-  "session_end":        "ISO 8601",
-  "duration_ms":        "integer",
-  "feature_path":       ["string"],
-  "error_events":       [{"feature": "string", "message": "string", "timestamp": "ISO 8601"}]
-}
-```
-
-### Enriched Event Schema (Mobile)
-
-```json
-{
-  "app_id":           "string",
-  "app_name":         "string",
-  "app_version":      "string",
-  "platform":         "string",
-  "os_version":       "string",
-  "device_hash":      "string",
-  "device_hash_type": "string",
-  "is_first_install": "boolean",
-  "session_start":    "ISO 8601",
-  "session_end":      "ISO 8601",
-  "duration_ms":      "integer",
-  "feature_path":     ["string"],
-  "error_events":     [{"feature": "string", "message": "string", "timestamp": "ISO 8601"}]
-}
-```
+The web package respects the `DNT` HTTP header by default (`RespectDnt = true`). When DNT is detected, the middleware skips telemetry entirely. This can be disabled if the consumer has a separate consent mechanism.
 
 ---
 
-## Admin UI
+## HTTP Client
 
-The admin UI is a Blazor application bundled inside `FactFoundry.TelemetryForge.Server`. No separate frontend deployment required — it serves directly from the same process.
+Both packages use a shared pattern (implemented independently in each package):
 
-### Design Philosophy
-
-- Zero-friction setup — first run to first payload in under 5 minutes
-- No config files to hand-edit before the UI is accessible
-- No manual database migrations
-- Every action completable in as few steps as possible
-- Clean, modern Blazor UI consistent with Fact Foundry tooling
-
-### First-Run Wizard
-
-Shown automatically when no admin account exists. Blocks access to the rest of the UI until complete.
-
-```
-Step 1 — Create admin account
-         Email + password (or SSO if configured)
-         ↓
-Step 2 — Server name
-         Human-readable name for this TelemetryForge instance
-         ↓
-Step 3 — Database connection
-         PostgreSQL, MSSQL, or MySQL — provider selection and connection string
-         ↓
-Step 4 — Done
-         Dashboard loads, prompt to register first site/app
-```
-
-### Pages
-
-#### Dashboard
-- Activity summary across all registered sites and apps
-- Total sessions today / this week / this month
-- Per-site/app session volume sparklines
-- Recent errors across all sources
-- Last payload received per site (health indicator)
-
-#### Sites & Apps
-- List of all registered sites and apps with type badge (web / desktop / mobile)
-- Status indicator — active (received payload in last 24h), idle, never received
-- **Add New** button — opens registration panel:
-  - Name
-  - Type (web / desktop / mobile)
-  - Generate key → shown once with copy button and clear "save this now" warning
-- **Manage** per site:
-  - View registration details
-  - Revoke key (with confirmation)
-  - Regenerate key — revokes old, generates new, shown once
-  - Delete site and all associated data
-
-#### Event Stream
-- Live or paginated feed of recent enriched events
-- Filterable by site, type, date range
-- Expandable rows showing full event payload
-- Useful for verifying a new integration is working
-
-#### Sinks
-- Configure downstream event subscribers
-- Built-in sink types:
-  - **Local Database** — default, no config needed
-  - **HTTP Endpoint** — URL + optional auth header
-- Add / remove / enable / disable sinks per site or globally
-- Test button — sends a sample payload to verify connectivity
-
-#### Settings
-- **Server** — instance name, base URL
-- **Retention** — how long to keep session records and visitor hashes
-- **Security** — enforce HTTPS, rate limit thresholds
-- **Admin Accounts** — add/remove admin users, reset passwords
-
-### UX Principles
-
-- Destructive actions (revoke key, delete site) always require explicit confirmation
-- API keys shown with one-click copy and a clear "this will not be shown again" warning
-- Empty states are helpful — new installs show a getting-started guide, not a blank page
-- Error states are specific — "Last payload received 3 days ago" not just a red dot
+- `ITelemetryClient` interface with `SendAsync<T>(string path, T payload, CancellationToken)`
+- `TelemetryForgeHttpClient` implementation using `HttpClient.PostAsJsonAsync`
+- Configured with `AddStandardResilienceHandler()` for built-in retry, timeout, and circuit-breaker
+- Non-success responses are logged as warnings, never thrown
+- `OperationCanceledException` is silently ignored (app shutting down)
+- All other exceptions are caught, logged, and swallowed
 
 ---
 
-## Event Pipeline (Pub/Sub)
+## Server Compatibility
 
-After enrichment the server publishes a `SessionCompleted` event. Subscribers are completely decoupled — adding a new downstream target requires only writing a new subscriber. The packages and server never change.
+These SDK packages are designed to work with `FactFoundry.TelemetryForge.Server`. The server handles:
 
-### Built-in Subscribers
+- API key validation (via `X-TelemetryForge-Key` header)
+- IP hashing with daily-rotating salt
+- Visitor/device first-seen detection
+- User-Agent parsing (browser, OS, device type)
+- IP geolocation (country/region via MaxMind GeoLite2)
+- Event enrichment and storage
+- Session materialization (for web events)
+- Downstream sink forwarding
 
-| Subscriber | Description |
-|---|---|
-| `LocalDatabaseSink` | Writes to local DB via EF Core |
-| `HttpSink` | POSTs enriched payload to a configured URL |
-
-### Example Downstream Targets
-
-```
-SessionCompleted ──→ Local SQLite / Postgres
-                 ──→ Azure Service Bus
-                 ──→ Fabric Eventhouse (KQL, Power BI real-time dashboards)
-                 ──→ RabbitMQ
-                 ──→ Custom HTTP endpoint
-```
-
----
-
-## GDPR Considerations
-
-### What the System Does Not Do
-
-- Does not set cookies
-- Does not emit JavaScript
-- Does not store raw IP addresses
-- Does not build cross-site profiles
-- Does not share data with third parties
-- Does not use advertising identifiers (IDFA, GAID)
-
-### Lawful Basis
-
-| Data | Basis | Notes |
-|---|---|---|
-| Web session analytics | Legitimate interest | Proportionate to purpose |
-| Desktop session analytics | Legitimate interest | Proportionate to purpose |
-| Mobile session analytics | Legitimate interest | Proportionate to purpose |
-| `visitor_hashes` | Legitimate interest | Minimal data, no behavioral content |
-| Geolocation (country) | Legitimate interest | Country-level is not personal data |
-| Machine fingerprint | Legitimate interest | Scoped to single vendor's system |
-
-### Required Actions for Consumers
-
-- Disclose telemetry collection in privacy policy
-- Define and enforce a data retention period (configurable in admin UI)
-- Implement a process for subject access requests
-- Do not store raw IP addresses or `_ga` values outside this system
-
-### GDPR and the `_ga` Cookie
-
-Reading the `_ga` cookie does not create new GDPR obligations. If the user consented to GA cookies, the cookie is already lawfully present. TelemetryForge reads it transiently for identity resolution and never persists the raw value.
-
----
-
-## Google Analytics Complementary Use (Web)
-
-TelemetryForge.Web and GA answer different questions and complement each other's blind spots:
-
-| Question | TelemetryForge | Google Analytics |
-|---|---|---|
-| Users with ad blockers | ✅ | ❌ Missed |
-| Server errors before render | ✅ | ❌ Missed |
-| Bot traffic | ✅ Visible | ⚠️ Filtered |
-| JS disabled users | ✅ | ❌ Missed |
-| In-page click/scroll events | ❌ | ✅ |
-| Cross-device tracking | ❌ | ✅ |
-| Conversion funnels | ❌ | ✅ |
-
-The delta between TelemetryForge's visitor count and GA's count reveals exactly how much traffic GA is missing.
-
----
-
-## Deployment Scenarios
-
-### Solo Developer (Single Machine)
-
-```
-[Web App :5000]     ──→
-[Desktop App]       ──→  [TelemetryForge.Server :5100]  ──→  [SQLite file]
-```
-
-Zero cloud dependency.
-
-### Small Business (LAN / VPS)
-
-```
-[Web App A]    ──→
-[Web App B]    ──→  [TelemetryForge.Server]  ──→  [Postgres]
-[Desktop App]  ──→
-[Mobile App]   ──→
-```
-
-### Enterprise
-
-```
-[Web App A]    ──→
-[Web App B]    ──→  [TelemetryForge.Server]  ──→  [Fabric Eventhouse]  ──→  [Power BI]
-[Desktop App]  ──→          ↕
-[Mobile App]   ──→    [visitor_hashes DB]
-```
-
----
-
-## Positioning
-
-> *"TelemetryForge — privacy-first, server-side telemetry for .NET. Web, desktop, and mobile. Your data, your infrastructure, forged into insights."*
-
-### Competitive Landscape
-
-| Tool | JS Required | Self-Hosted | Native .NET | Desktop Support | Mobile Support | API-First | Admin UI |
-|---|---|---|---|---|---|---|---|
-| Google Analytics | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Plausible | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Matomo | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Umami | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Application Insights | ⚠️ Optional | ❌ | ✅ | ✅ | ✅ | ⚠️ | ✅ |
-| **TelemetryForge** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-
-### Key Differentiators
-
-- Zero JavaScript — works for JS-disabled users and ad-blocked environments
-- Native Blazor circuit awareness — true session tracking, not reconstructed from fragments
-- First-class desktop support via machine fingerprinting
-- Mobile support with app store compliant identity
-- API-first central server — any platform can send data
-- Privacy by design at the architecture level
-- Self-hosted — data never leaves your infrastructure
-- Composable event pipeline — wire to any downstream store or service
-- Built-in Blazor admin UI — zero-friction setup, no config files required
-- Single central server handles web, desktop, and mobile telemetry unified
-
----
-
-*Specification drafted May 2026 — Fact Foundry LLC*
+The SDK packages are intentionally thin — they capture and transmit raw telemetry data, and the server handles all enrichment and analysis.

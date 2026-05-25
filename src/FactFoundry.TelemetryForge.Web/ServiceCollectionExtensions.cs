@@ -35,6 +35,7 @@ public static class ServiceCollectionExtensions
         services.AddHttpContextAccessor();
         services.AddScoped<TelemetryForgeCircuitHandler>();
         services.AddScoped<CircuitHandler>(sp => sp.GetRequiredService<TelemetryForgeCircuitHandler>());
+        services.AddScoped<ITelemetryForge>(sp => sp.GetRequiredService<TelemetryForgeCircuitHandler>());
 
         return services;
     }

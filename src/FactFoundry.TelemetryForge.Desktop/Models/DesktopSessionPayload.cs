@@ -4,9 +4,16 @@ namespace FactFoundry.TelemetryForge.Desktop.Models;
 
 /// <summary>
 /// Payload sent to the TelemetryForge Server for a desktop application session.
+/// Sent on the initial flush and on each subsequent heartbeat with incremental data.
 /// </summary>
 public sealed class DesktopSessionPayload
 {
+    [JsonPropertyName("session_id")]
+    public required string SessionId { get; init; }
+
+    [JsonPropertyName("sequence")]
+    public required int Sequence { get; init; }
+
     [JsonPropertyName("app_version")]
     public string? AppVersion { get; init; }
 
