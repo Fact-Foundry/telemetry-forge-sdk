@@ -46,5 +46,10 @@ Thumbs.db
 *.dbmdl
 *.jfm
 
+## Secrets
+.env
+.env.*
+appsettings*.Development.json
+
 ## Claude Code
 .claude/settings.local.json

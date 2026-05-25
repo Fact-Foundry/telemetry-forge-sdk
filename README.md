@@ -47,6 +47,16 @@ builder.Services.AddTelemetryForge(options =>
 - No cross-site tracking
 - No advertising identifiers
 
+## Test App
+
+A Blazor Server test app is included for interactive testing of the Desktop SDK against a running TelemetryForge Server.
+
+```bash
+dotnet run --project tests/FactFoundry.TelemetryForge.TestApp
+```
+
+Open the URL shown in the terminal (typically `http://localhost:5000`), enter your server endpoint and API key, then click **Start Session**. From there you can navigate features, simulate errors, and flush the session to verify payloads reach the server.
+
 ## Requirements
 
 - .NET 8, 9, or 10

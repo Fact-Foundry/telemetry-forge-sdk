@@ -5,6 +5,7 @@
     <Project Path="src/FactFoundry.TelemetryForge.Web/FactFoundry.TelemetryForge.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/FactFoundry.TelemetryForge.TestApp/FactFoundry.TelemetryForge.TestApp.csproj" />
     <Project Path="tests/FactFoundry.TelemetryForge.Tests/FactFoundry.TelemetryForge.Tests.csproj" />
   </Folder>
 </Solution>
