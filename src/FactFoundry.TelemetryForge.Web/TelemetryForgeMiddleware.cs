@@ -40,7 +40,15 @@ public sealed class TelemetryForgeMiddleware
         var rc = RequestContext.FromHttpContext(context, _options);
 
         var cache = context.RequestServices.GetService(typeof(RequestContextAccessor)) as RequestContextAccessor;
-        cache?.Store(RequestContextAccessor.BuildKey(rc.IpAddress, rc.UserAgent), rc);
+        var cacheKey = RequestContextAccessor.BuildKey(rc.IpAddress, rc.UserAgent);
+        cache?.Store(cacheKey, rc);
+
+        var sessionId = cache?.GetSessionId(cacheKey);
+        if (sessionId is null)
+        {
+            sessionId = Guid.NewGuid().ToString();
+            cache?.StoreSessionId(cacheKey, sessionId);
+        }
 
         var stopwatch = Stopwatch.StartNew();
 
@@ -52,7 +60,7 @@ public sealed class TelemetryForgeMiddleware
         {
             var payload = new WebEventPayload
             {
-                SessionId = Guid.NewGuid().ToString(),
+                SessionId = sessionId,
                 EventType = "page_view",
                 Platform = "aspnet",
                 Timestamp = DateTimeOffset.UtcNow,

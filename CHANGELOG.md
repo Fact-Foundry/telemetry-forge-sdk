@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.2] — Unreleased
+
+### Fixes
+
+- Web: shared session ID between middleware and circuit handler — all events within a circuit now use the same session ID instead of generating a new one per request
+
 ## [1.1.1] — 2026-05-26
 
 ### Fixes
