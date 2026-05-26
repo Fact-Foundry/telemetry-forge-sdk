@@ -20,7 +20,8 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler, ITelemetryFor
     private readonly WebTelemetryOptions _options;
     private readonly ILogger<TelemetryForgeCircuitHandler> _logger;
 
-    private readonly string _sessionId = Guid.NewGuid().ToString();
+    private string _sessionId = Guid.NewGuid().ToString();
+    private string? _cacheKey;
     private RequestContext? _requestContext;
     private string _lastPagePath = "/";
 
@@ -41,15 +42,21 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler, ITelemetryFor
     public override async Task OnCircuitOpenedAsync(Circuit circuit, CancellationToken cancellationToken)
     {
         var httpContext = _httpContextAccessor.HttpContext;
+        var cache = _serviceProvider.GetService(typeof(RequestContextAccessor)) as RequestContextAccessor;
 
         if (httpContext is not null)
         {
             var ip = RequestContext.GetClientIp(httpContext);
             var ua = httpContext.Request.Headers.UserAgent.ToString();
-            var key = RequestContextAccessor.BuildKey(ip, ua);
+            _cacheKey = RequestContextAccessor.BuildKey(ip, ua);
 
-            var cache = _serviceProvider.GetService(typeof(RequestContextAccessor)) as RequestContextAccessor;
-            _requestContext = cache?.TryGet(key);
+            _requestContext = cache?.TryGet(_cacheKey);
+
+            var cachedSessionId = cache?.GetSessionId(_cacheKey);
+            if (cachedSessionId is not null)
+                _sessionId = cachedSessionId;
+            else
+                cache?.StoreSessionId(_cacheKey, _sessionId);
         }
 
         if (_requestContext is null && httpContext is not null)
@@ -80,7 +87,12 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler, ITelemetryFor
     public override async Task OnCircuitClosedAsync(Circuit circuit, CancellationToken cancellationToken)
     {
         await SendEventAsync("circuit_close", _lastPagePath, cancellationToken: cancellationToken);
-        _logger.LogInformation("Blazor circuit close event sent for {Path}", _lastPagePath);
+
+        if (_cacheKey is not null)
+        {
+            var cache = _serviceProvider.GetService(typeof(RequestContextAccessor)) as RequestContextAccessor;
+            cache?.RemoveSessionId(_cacheKey);
+        }
     }
 
     private async Task SendEventAsync(
