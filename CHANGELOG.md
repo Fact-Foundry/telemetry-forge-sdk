@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.1.1] — 2026-05-26
+
+### Fixes
+
+- Web: fixed Client Hints missing on circuit handler events — Brave (and other Chromium forks) showed as "Chrome" on all events except the initial page load
+- Web: circuit open event now sends `circuit_open` instead of `page_view` — prevents inflated page view counts
+- Web: circuit open page path now shows the actual landing page instead of `/_blazor`
+- Test app: added `AddTelemetryForge()` and `UseTelemetryForge()` registration — circuit handler was never invoked because services were not registered
+
+### Features
+
+- Web: extracted `RequestContext` to consolidate duplicated header-reading logic between middleware and circuit handler
+- Test app: SDK pipeline configured via `appsettings.json` (endpoint + API key) — real middleware and circuit handler run alongside the bot simulation mode
+
 ## [1.1.0] — 2026-05-25
 
 ### Features

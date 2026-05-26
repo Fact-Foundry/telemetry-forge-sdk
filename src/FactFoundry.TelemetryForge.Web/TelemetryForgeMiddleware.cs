@@ -37,6 +37,11 @@ public sealed class TelemetryForgeMiddleware
             return;
         }
 
+        var rc = RequestContext.FromHttpContext(context, _options);
+
+        var cache = context.RequestServices.GetService(typeof(RequestContextAccessor)) as RequestContextAccessor;
+        cache?.Store(RequestContextAccessor.BuildKey(rc.IpAddress, rc.UserAgent), rc);
+
         var stopwatch = Stopwatch.StartNew();
 
         await _next(context);
@@ -45,27 +50,25 @@ public sealed class TelemetryForgeMiddleware
 
         try
         {
-            var (country, region) = GeoHeaderResolver.Resolve(context, _options.GeoProvider);
-
             var payload = new WebEventPayload
             {
                 SessionId = Guid.NewGuid().ToString(),
                 EventType = "page_view",
                 Platform = "aspnet",
                 Timestamp = DateTimeOffset.UtcNow,
-                IpAddress = GetClientIp(context),
-                GaValue = GetGaValue(context),
-                UserAgent = context.Request.Headers.UserAgent.ToString(),
-                Referrer = context.Request.Headers.Referer.ToString() is { Length: > 0 } r ? r : null,
-                Language = context.Request.Headers.AcceptLanguage.ToString(),
-                SecChUa = context.Request.Headers["Sec-CH-UA"].ToString() is { Length: > 0 } ch ? ch : null,
-                SecChUaMobile = context.Request.Headers["Sec-CH-UA-Mobile"].ToString() is { Length: > 0 } chm ? chm : null,
-                SecChUaPlatform = context.Request.Headers["Sec-CH-UA-Platform"].ToString() is { Length: > 0 } chp ? chp : null,
-                PagePath = context.Request.Path.Value ?? "/",
+                IpAddress = rc.IpAddress,
+                GaValue = rc.GaValue,
+                UserAgent = rc.UserAgent,
+                Referrer = rc.Referrer,
+                Language = rc.Language,
+                SecChUa = rc.SecChUa,
+                SecChUaMobile = rc.SecChUaMobile,
+                SecChUaPlatform = rc.SecChUaPlatform,
+                PagePath = rc.PagePath,
                 StatusCode = context.Response.StatusCode,
                 DurationMs = stopwatch.ElapsedMilliseconds,
-                Country = country,
-                Region = region
+                Country = rc.Country,
+                Region = rc.Region
             };
 
             await _client.SendAsync("/api/telemetry/web", payload);
@@ -79,30 +82,6 @@ public sealed class TelemetryForgeMiddleware
     private static bool ShouldSkip(HttpContext context)
     {
         return IsStaticFile(context.Request.Path);
-    }
-
-    private static string GetClientIp(HttpContext context)
-    {
-        var forwarded = context.Request.Headers["X-Forwarded-For"].ToString();
-        if (!string.IsNullOrEmpty(forwarded))
-        {
-            var firstIp = forwarded.Split(',', StringSplitOptions.TrimEntries)[0];
-            if (!string.IsNullOrEmpty(firstIp))
-                return firstIp;
-        }
-
-        return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-    }
-
-    private string? GetGaValue(HttpContext context)
-    {
-        if (!_options.UseGaCookie)
-            return null;
-
-        if (context.Request.Cookies.TryGetValue("_ga", out var gaValue) && !string.IsNullOrEmpty(gaValue))
-            return gaValue;
-
-        return null;
     }
 
     private static bool IsStaticFile(PathString path)

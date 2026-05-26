@@ -7,6 +7,7 @@
 @using System.Text.Json
 @using System.Reflection
 @inject IHttpContextAccessor HttpContextAccessor
+@inject IConfiguration Configuration
 @implements IAsyncDisposable
 
 <div style="max-width: 960px; margin: 0 auto; padding: 2rem;">
@@ -253,6 +254,14 @@
 
     protected override void OnInitialized()
     {
+        var tfConfig = Configuration.GetSection("TelemetryForge");
+        var configEndpoint = tfConfig["Endpoint"];
+        var configApiKey = tfConfig["ApiKey"];
+        if (!string.IsNullOrEmpty(configEndpoint))
+            _endpoint = configEndpoint;
+        if (!string.IsNullOrEmpty(configApiKey))
+            _apiKey = configApiKey;
+
         var context = HttpContextAccessor.HttpContext;
         if (context is not null)
         {
@@ -355,6 +364,8 @@
 
     private async Task StopDesktopSession()
     {
+        _sessionActive = false;
+
         if (_tracker is not null)
         {
             try
@@ -375,7 +386,6 @@
         }
 
         _tracker = null;
-        _sessionActive = false;
     }
 
     private void TrackFeature(string feature)
@@ -411,7 +421,39 @@
         _webPagePath.Clear();
         _webPayloadJson = null;
 
+        _ = SendCircuitOpenAsync();
         Log("Web session started — click pages to simulate browsing");
+    }
+
+    private async Task SendCircuitOpenAsync()
+    {
+        if (_webClient is null) return;
+
+        var payload = new WebEventPayload
+        {
+            SessionId = _webSessionId,
+            EventType = "circuit_open",
+            Platform = "blazor-server",
+            Timestamp = DateTimeOffset.UtcNow,
+            IpAddress = _webIp,
+            UserAgent = _webUserAgent,
+            Referrer = _webReferrer,
+            Language = _webLanguage,
+            SecChUa = _webSecChUa,
+            SecChUaMobile = _webSecChUaMobile,
+            SecChUaPlatform = _webSecChUaPlatform,
+            PagePath = "/"
+        };
+
+        try
+        {
+            await _webClient.SendAsync("/api/telemetry/web", payload);
+            Log("circuit_open event sent");
+        }
+        catch (Exception ex)
+        {
+            Log($"circuit_open send error: {ex.Message}");
+        }
     }
 
     private async Task WebNavigate(string path)
@@ -452,10 +494,11 @@
 
     private async Task StopWebSession()
     {
+        _sessionActive = false;
+
         if (_webClient is null || _webPagePath.Count == 0)
         {
             Log("No pages visited — nothing to send");
-            _sessionActive = false;
             return;
         }
 

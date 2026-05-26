@@ -7,8 +7,8 @@ using Microsoft.Extensions.Options;
 namespace FactFoundry.TelemetryForge.Web;
 
 /// <summary>
-/// Blazor Server circuit handler that sends per-navigation <c>page_view</c> events
-/// and a <c>circuit_close</c> event when the circuit disconnects.
+/// Blazor Server circuit handler that sends a <c>circuit_open</c> event on connect,
+/// per-navigation <c>page_view</c> events, and a <c>circuit_close</c> event on disconnect.
 /// Also implements <see cref="ITelemetryForge"/> for custom event tracking within
 /// a Blazor circuit.
 /// </summary>
@@ -16,61 +16,49 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler, ITelemetryFor
 {
     private readonly ITelemetryClient _client;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IServiceProvider _serviceProvider;
     private readonly WebTelemetryOptions _options;
     private readonly ILogger<TelemetryForgeCircuitHandler> _logger;
 
     private readonly string _sessionId = Guid.NewGuid().ToString();
-    private string _ipAddress = string.Empty;
-    private string? _gaValue;
-    private string _userAgent = string.Empty;
-    private string? _referrer;
-    private string _language = string.Empty;
-    private string? _secChUa;
-    private string? _secChUaMobile;
-    private string? _secChUaPlatform;
-    private string? _country;
-    private string? _region;
+    private RequestContext? _requestContext;
     private string _lastPagePath = "/";
 
     public TelemetryForgeCircuitHandler(
         ITelemetryClient client,
         IHttpContextAccessor httpContextAccessor,
+        IServiceProvider serviceProvider,
         IOptions<WebTelemetryOptions> options,
         ILogger<TelemetryForgeCircuitHandler> logger)
     {
         _client = client;
         _httpContextAccessor = httpContextAccessor;
+        _serviceProvider = serviceProvider;
         _options = options.Value;
         _logger = logger;
     }
 
-    public override Task OnCircuitOpenedAsync(Circuit circuit, CancellationToken cancellationToken)
+    public override async Task OnCircuitOpenedAsync(Circuit circuit, CancellationToken cancellationToken)
     {
-        var context = _httpContextAccessor.HttpContext;
-        if (context is not null)
+        var httpContext = _httpContextAccessor.HttpContext;
+
+        if (httpContext is not null)
         {
-            _ipAddress = GetClientIp(context);
-            _userAgent = context.Request.Headers.UserAgent.ToString();
-            _referrer = context.Request.Headers.Referer.ToString() is { Length: > 0 } r ? r : null;
-            _language = context.Request.Headers.AcceptLanguage.ToString();
-            _secChUa = context.Request.Headers["Sec-CH-UA"].ToString() is { Length: > 0 } ch ? ch : null;
-            _secChUaMobile = context.Request.Headers["Sec-CH-UA-Mobile"].ToString() is { Length: > 0 } chm ? chm : null;
-            _secChUaPlatform = context.Request.Headers["Sec-CH-UA-Platform"].ToString() is { Length: > 0 } chp ? chp : null;
-            (_country, _region) = GeoHeaderResolver.Resolve(context, _options.GeoProvider);
+            var ip = RequestContext.GetClientIp(httpContext);
+            var ua = httpContext.Request.Headers.UserAgent.ToString();
+            var key = RequestContextAccessor.BuildKey(ip, ua);
 
-            if (_options.UseGaCookie
-                && context.Request.Cookies.TryGetValue("_ga", out var gaValue)
-                && !string.IsNullOrEmpty(gaValue))
-            {
-                _gaValue = gaValue;
-            }
-
-            _lastPagePath = context.Request.Path.Value ?? "/";
+            var cache = _serviceProvider.GetService(typeof(RequestContextAccessor)) as RequestContextAccessor;
+            _requestContext = cache?.TryGet(key);
         }
 
-        _ = SendEventAsync("page_view", _lastPagePath);
+        if (_requestContext is null && httpContext is not null)
+            _requestContext = RequestContext.FromHttpContext(httpContext, _options);
 
-        return Task.CompletedTask;
+        if (_requestContext is not null)
+            _lastPagePath = _requestContext.PagePath;
+
+        await SendEventAsync("circuit_open", _lastPagePath);
     }
 
     /// <summary>
@@ -92,7 +80,7 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler, ITelemetryFor
     public override async Task OnCircuitClosedAsync(Circuit circuit, CancellationToken cancellationToken)
     {
         await SendEventAsync("circuit_close", _lastPagePath, cancellationToken: cancellationToken);
-        _logger.LogDebug("Blazor circuit close event sent for {Path}", _lastPagePath);
+        _logger.LogInformation("Blazor circuit close event sent for {Path}", _lastPagePath);
     }
 
     private async Task SendEventAsync(
@@ -104,23 +92,25 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler, ITelemetryFor
     {
         try
         {
+            var rc = _requestContext;
+
             var payload = new WebEventPayload
             {
                 SessionId = _sessionId,
                 EventType = eventType,
                 Platform = "blazor-server",
                 Timestamp = DateTimeOffset.UtcNow,
-                IpAddress = _ipAddress,
-                GaValue = _gaValue,
-                UserAgent = _userAgent,
-                Referrer = _referrer,
-                Language = _language,
-                SecChUa = _secChUa,
-                SecChUaMobile = _secChUaMobile,
-                SecChUaPlatform = _secChUaPlatform,
+                IpAddress = rc?.IpAddress ?? "unknown",
+                GaValue = rc?.GaValue,
+                UserAgent = rc?.UserAgent ?? string.Empty,
+                Referrer = rc?.Referrer,
+                Language = rc?.Language ?? string.Empty,
+                SecChUa = rc?.SecChUa,
+                SecChUaMobile = rc?.SecChUaMobile,
+                SecChUaPlatform = rc?.SecChUaPlatform,
                 PagePath = pagePath,
-                Country = _country,
-                Region = _region,
+                Country = rc?.Country,
+                Region = rc?.Region,
                 EventName = eventName,
                 EventData = eventData
             };
@@ -131,18 +121,5 @@ public sealed class TelemetryForgeCircuitHandler : CircuitHandler, ITelemetryFor
         {
             _logger.LogWarning(ex, "Failed to send {EventType} event for {Path}", eventType, pagePath);
         }
-    }
-
-    private static string GetClientIp(HttpContext context)
-    {
-        var forwarded = context.Request.Headers["X-Forwarded-For"].ToString();
-        if (!string.IsNullOrEmpty(forwarded))
-        {
-            var firstIp = forwarded.Split(',', StringSplitOptions.TrimEntries)[0];
-            if (!string.IsNullOrEmpty(firstIp))
-                return firstIp;
-        }
-
-        return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
     }
 }
