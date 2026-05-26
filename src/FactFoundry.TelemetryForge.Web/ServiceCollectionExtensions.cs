@@ -33,6 +33,7 @@ public static class ServiceCollectionExtensions
         .AddStandardResilienceHandler();
 
         services.AddHttpContextAccessor();
+        services.AddSingleton<RequestContextAccessor>();
         services.AddScoped<TelemetryForgeCircuitHandler>();
         services.AddScoped<CircuitHandler>(sp => sp.GetRequiredService<TelemetryForgeCircuitHandler>());
         services.AddScoped<ITelemetryForge>(sp => sp.GetRequiredService<TelemetryForgeCircuitHandler>());
