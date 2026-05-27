@@ -1,11 +1,23 @@
 # Changelog
 
-## [1.1.2] — Unreleased
+## [1.1.4] — Unreleased
+
+### Docs
+
+- README: added Blazor render mode reference table — documents which telemetry layers (middleware vs circuit handler) are active under each render mode
+- README: added reverse proxy header forwarding guide for Nginx and Apache — covers Client Hints and CDN geolocation headers
+
+## [1.1.3] — 2026-05-26
+
+### Fixes
+
+- Web: middleware stores request context under both forwarded IP and connection IP — fixes cache lookup failure for circuit handler behind reverse proxies (Apache, nginx) where WebSocket connections lack X-Forwarded-For
+
+## [1.1.2] — 2026-05-26
 
 ### Fixes
 
 - Web: shared session ID between middleware and circuit handler — all events within a circuit now use the same session ID instead of generating a new one per request
-- Web: middleware stores request context under both forwarded IP and connection IP — fixes cache lookup failure for circuit handler behind reverse proxies (Apache, nginx) where WebSocket connections lack X-Forwarded-For
 
 ## [1.1.1] — 2026-05-26
 
