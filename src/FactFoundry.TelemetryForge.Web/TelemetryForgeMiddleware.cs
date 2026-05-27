@@ -43,11 +43,21 @@ public sealed class TelemetryForgeMiddleware
         var cacheKey = RequestContextAccessor.BuildKey(rc.IpAddress, rc.UserAgent);
         cache?.Store(cacheKey, rc);
 
+        var connectionIp = context.Connection.RemoteIpAddress?.ToString();
+        string? fallbackKey = null;
+        if (connectionIp is not null && connectionIp != rc.IpAddress)
+        {
+            fallbackKey = RequestContextAccessor.BuildKey(connectionIp, rc.UserAgent);
+            cache?.Store(fallbackKey, rc);
+        }
+
         var sessionId = cache?.GetSessionId(cacheKey);
         if (sessionId is null)
         {
             sessionId = Guid.NewGuid().ToString();
             cache?.StoreSessionId(cacheKey, sessionId);
+            if (fallbackKey is not null)
+                cache?.StoreSessionId(fallbackKey, sessionId);
         }
 
         var stopwatch = Stopwatch.StartNew();
