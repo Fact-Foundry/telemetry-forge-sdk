@@ -123,24 +123,24 @@ public sealed class DesktopSessionTracker : IFeatureTracker, IAsyncDisposable, I
         if (_heartbeatTimer is not null)
             await _heartbeatTimer.DisposeAsync();
 
+        await FlushAsync();
+
         lock (_lock)
         {
             _disposed = true;
         }
-
-        await FlushAsync();
     }
 
     public void Dispose()
     {
         _heartbeatTimer?.Dispose();
 
+        FlushAsync().GetAwaiter().GetResult();
+
         lock (_lock)
         {
             _disposed = true;
         }
-
-        FlushAsync().GetAwaiter().GetResult();
     }
 
     private void OnHeartbeat(object? state)

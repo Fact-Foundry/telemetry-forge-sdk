@@ -2,6 +2,10 @@
 
 ## [1.1.4] — Unreleased
 
+### Fixes
+
+- Desktop: flush pending telemetry before setting disposed flag — prevents final flush from being silently skipped on shutdown
+
 ### Docs
 
 - README: added Blazor render mode reference table — documents which telemetry layers (middleware vs circuit handler) are active under each render mode
