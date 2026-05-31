@@ -1,10 +1,11 @@
 # Changelog
 
-## [1.1.4] — Unreleased
+## [1.1.4] — 2026-05-31
 
 ### Fixes
 
 - Desktop: flush pending telemetry before setting disposed flag — prevents final flush from being silently skipped on shutdown
+- Desktop: OS version now reported via shared `OsInfo` helper (friendly name + kernel) instead of `Environment.OSVersion.ToString()` — gives "macOS 14.5", Linux distro PRETTY_NAME, and Windows marketing name instead of "Unix 26.4.0"; matches the Semantic Modeler licensing service format
 
 ### Docs
 
