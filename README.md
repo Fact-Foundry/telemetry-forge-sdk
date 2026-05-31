@@ -113,6 +113,55 @@ builder.Services.AddTelemetryForge(options =>
 });
 ```
 
+### Configuration Options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `Endpoint` | `string` | `""` | URL of your TelemetryForge Server instance |
+| `ApiKey` | `string` | `""` | Per-app API key issued during registration |
+| `AppVersion` | `string?` | Entry assembly version | Application version string (e.g. `"1.2.3"`). Auto-populated from the entry assembly if not set |
+| `HeartbeatIntervalMinutes` | `int?` | `15` | Minutes between heartbeat flushes. Set to `0` or `null` to disable (only flush at shutdown) |
+
+The following payload fields are **auto-populated** and have no configuration option:
+
+| Field | Source |
+|---|---|
+| `session_id` | Generated UUID per session |
+| `platform` | Detected at runtime (`"Windows"`, `"Linux"`, `"macOS"`) |
+| `os_version` | Friendly OS name + kernel via `OsInfo.Get()` (e.g. `"macOS 14.5 \| Darwin 23.5.0"`, `"Arch Linux \| Linux 6.8.9"`) |
+| `fingerprint_hash` | SHA-256 hash of machine-specific identifiers (raw values are never transmitted) |
+
+### OS Detection Utility
+
+The Desktop package ships a public `OsInfo` class that you can reuse in your own code:
+
+```csharp
+using FactFoundry.TelemetryForge.Desktop;
+
+var fullDescription = OsInfo.Get();          // "Arch Linux | Linux 6.8.9"
+var friendlyName    = OsInfo.GetFriendlyName(); // "Arch Linux"
+```
+
+> **Namespace collision warning:** If your project has its own `OsInfo` class, importing both namespaces will produce an ambiguous reference error. Use a namespace alias or fully qualify one of them.
+
+### Payload Schema
+
+Each heartbeat sends a JSON payload to `POST /api/telemetry/desktop`:
+
+| JSON field | Type | Description |
+|---|---|---|
+| `session_id` | `string` | UUID identifying this session |
+| `sequence` | `int` | Monotonically increasing counter for heartbeat ordering |
+| `app_version` | `string?` | Application version |
+| `platform` | `string` | Runtime platform (`"Windows"`, `"Linux"`, `"macOS"`) |
+| `os_version` | `string` | Friendly OS name + kernel version |
+| `fingerprint_hash` | `string` | SHA-256 machine fingerprint hash |
+| `session_start` | `ISO 8601` | When the session started (UTC) |
+| `session_end` | `ISO 8601` | Timestamp of this flush (UTC) |
+| `duration_ms` | `long` | Milliseconds from session start to this flush |
+| `feature_path` | `string[]` | Features visited since the last flush (delta) |
+| `error_events` | `object[]` | Errors since the last flush — each has `feature`, `message`, `timestamp` |
+
 ## What Gets Collected
 
 - **Web:** per-request page view events, referrer, browser/OS (from User-Agent), custom events, CDN geolocation (Cloudflare/CloudFront/Vercel/Akamai) — all server-side, no JavaScript

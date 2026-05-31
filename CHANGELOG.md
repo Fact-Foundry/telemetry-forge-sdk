@@ -2,6 +2,13 @@
 
 ## [1.1.6] — Unreleased
 
+### Docs
+
+- README: added Desktop configuration options table with defaults and auto-populated fields
+- README: documented `OsInfo` as a public reusable utility with namespace collision warning
+- README: added Desktop payload schema reference table
+- Desktop: added XML doc comments to all `DesktopSessionPayload` properties
+
 ## [1.1.5] — 2026-05-31
 
 ### Fixes
