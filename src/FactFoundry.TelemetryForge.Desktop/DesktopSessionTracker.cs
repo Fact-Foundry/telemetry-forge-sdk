@@ -103,7 +103,7 @@ public sealed class DesktopSessionTracker : IFeatureTracker, IAsyncDisposable, I
             Sequence = sequence,
             AppVersion = _options.AppVersion ?? GetEntryAssemblyVersion(),
             Platform = _fingerprint.GetPlatform(),
-            OsVersion = Environment.OSVersion.ToString(),
+            OsVersion = OsInfo.Get(),
             FingerprintHash = _fingerprint.GetFingerprintHash(),
             SessionStart = _sessionStart,
             SessionEnd = sessionEnd,
