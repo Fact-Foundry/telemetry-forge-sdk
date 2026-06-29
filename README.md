@@ -31,23 +31,19 @@ app.MapRazorComponents<App>()
 
 ### Conditional Registration
 
-`app.UseTelemetryForge()` resolves `ITelemetryClient` from DI, which only exists if you called `AddTelemetryForge()`. If you register the middleware **without** the service — for example when the endpoint/API key aren't configured in some environments — the app **fails to start**. Guard *both* calls behind the same config check so an unconfigured environment simply runs without telemetry instead of crashing:
+`UseTelemetryForge()` is safe to call even if `AddTelemetryForge()` was never called — the middleware detects the missing service registration, logs a warning, and no-ops. This means you only need to guard the `AddTelemetryForge()` call:
 
 ```csharp
 var endpoint = builder.Configuration["TelemetryForge:Endpoint"];
 var apiKey   = builder.Configuration["TelemetryForge:ApiKey"];
-var telemetryEnabled = !string.IsNullOrEmpty(endpoint) && !string.IsNullOrEmpty(apiKey);
 
-if (telemetryEnabled)
+if (!string.IsNullOrEmpty(endpoint) && !string.IsNullOrEmpty(apiKey))
 {
     builder.Services.AddTelemetryForge(o => { o.Endpoint = endpoint!; o.ApiKey = apiKey!; });
 }
 
-// ... later, after app.UseRouting():
-if (telemetryEnabled)
-{
-    app.UseTelemetryForge();
-}
+// Always safe — no-ops with a warning if AddTelemetryForge() was not called
+app.UseTelemetryForge();
 ```
 
 ### Blazor Render Mode

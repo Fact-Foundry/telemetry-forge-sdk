@@ -4,6 +4,7 @@
 
 ### Features
 
+- Web + Api: `UseTelemetryForge()` and `UseTelemetryForgeApi()` now no-op with a warning when called without a prior `AddTelemetryForge()`/`AddTelemetryForgeApi()` registration — a missing telemetry config can no longer crash the host at startup
 - New package `FactFoundry.TelemetryForge.Api` — stateless ASP.NET middleware that posts one event per matched HTTP request (route template, method, status code, latency) to `/api/telemetry/api`; captures low-cardinality route templates only, no caller IP, body, or PII
 - `FactFoundry.TelemetryForge.Api` now reports the caller's `country` (ISO 3166-1 alpha-2) resolved from a CDN geolocation header on the inbound request (Cloudflare/CloudFront/Vercel/Akamai), still without ever handling an IP. Because the SDK posts telemetry from the app server, server-side IP geolocation would have located the app server rather than the caller; reading the edge-injected header is the only way to get the real caller's country. New `ApiTelemetryOptions.GeoProvider` (default `Auto`) selects the provider, or `None` to disable
 - `FactFoundry.TelemetryForge.Api` stamps an `X-TelemetryForge-Sdk-Version` header (auto-read from the assembly's informational version, build metadata stripped) on every telemetry post, so the server can record which SDK version each app runs without any per-event cost
@@ -15,8 +16,7 @@
 - README: documented `OsInfo` as a public reusable utility with namespace collision warning
 - README: added Desktop payload schema reference table
 - Desktop: added XML doc comments to all `DesktopSessionPayload` properties
-- README: added Web "Conditional Registration" section — guard `AddTelemetryForge()`/`UseTelemetryForge()` behind a config check so an unconfigured environment doesn't crash on startup
-- Future Enhancements: noted making `UseTelemetryForge()` no-op + warn when the service isn't registered
+- README: updated "Conditional Registration" section — `UseTelemetryForge()` is now safe to call unconditionally
 
 ## [1.1.5] — 2026-05-31
 
