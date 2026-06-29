@@ -29,6 +29,27 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 ```
 
+### Conditional Registration
+
+`app.UseTelemetryForge()` resolves `ITelemetryClient` from DI, which only exists if you called `AddTelemetryForge()`. If you register the middleware **without** the service — for example when the endpoint/API key aren't configured in some environments — the app **fails to start**. Guard *both* calls behind the same config check so an unconfigured environment simply runs without telemetry instead of crashing:
+
+```csharp
+var endpoint = builder.Configuration["TelemetryForge:Endpoint"];
+var apiKey   = builder.Configuration["TelemetryForge:ApiKey"];
+var telemetryEnabled = !string.IsNullOrEmpty(endpoint) && !string.IsNullOrEmpty(apiKey);
+
+if (telemetryEnabled)
+{
+    builder.Services.AddTelemetryForge(o => { o.Endpoint = endpoint!; o.ApiKey = apiKey!; });
+}
+
+// ... later, after app.UseRouting():
+if (telemetryEnabled)
+{
+    app.UseTelemetryForge();
+}
+```
+
 ### Blazor Render Mode
 
 The Web package has two layers — HTTP middleware and a Blazor circuit handler — and which layer fires depends on your render mode:
