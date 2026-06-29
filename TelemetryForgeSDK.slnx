@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/FactFoundry.TelemetryForge.Api/FactFoundry.TelemetryForge.Api.csproj" />
     <Project Path="src/FactFoundry.TelemetryForge.Desktop/FactFoundry.TelemetryForge.Desktop.csproj" />
     <Project Path="src/FactFoundry.TelemetryForge.Web/FactFoundry.TelemetryForge.Web.csproj" />
   </Folder>

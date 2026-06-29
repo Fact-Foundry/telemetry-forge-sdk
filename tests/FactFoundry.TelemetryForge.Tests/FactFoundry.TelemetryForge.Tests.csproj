@@ -16,6 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\FactFoundry.TelemetryForge.Api\FactFoundry.TelemetryForge.Api.csproj" />
     <ProjectReference Include="..\..\src\FactFoundry.TelemetryForge.Desktop\FactFoundry.TelemetryForge.Desktop.csproj" />
     <ProjectReference Include="..\..\src\FactFoundry.TelemetryForge.Web\FactFoundry.TelemetryForge.Web.csproj" />
   </ItemGroup>
