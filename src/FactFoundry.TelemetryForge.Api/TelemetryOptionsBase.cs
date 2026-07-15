@@ -14,4 +14,12 @@ public abstract class TelemetryOptionsBase
     /// Per-site or per-app API key issued during registration.
     /// </summary>
     public string ApiKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Additional TelemetryForge servers to mirror every payload to, alongside the primary
+    /// <see cref="Endpoint"/>. Each mirror carries its own API key. Sends are best-effort and
+    /// independent — a slow or failing mirror never blocks or affects the primary or your app.
+    /// Leave empty (the default) to send to the primary endpoint only.
+    /// </summary>
+    public IList<TelemetryTarget> Mirrors { get; } = new List<TelemetryTarget>();
 }

@@ -20,6 +20,23 @@ builder.Services.AddTelemetryForge(options =>
 });
 ```
 
+## Mirroring to Multiple Servers
+
+Send the same telemetry to more than one TelemetryForge server — for example, to stand up a new server alongside your current one and compare, or to start collecting data before you cut over. Add one or more `Mirrors`, each with its own API key:
+
+```csharp
+builder.Services.AddTelemetryForge(options =>
+{
+    options.Endpoint = "https://telemetry.yourdomain.com";   // primary
+    options.ApiKey   = "your-app-api-key";
+
+    // Also send to a second server (add when it's ready):
+    options.Mirrors.Add(new("https://new-server.yourdomain.com", "new-server-key"));
+});
+```
+
+Every payload posts to the primary and each mirror **concurrently and best-effort** — a slow or unavailable mirror never blocks or fails your app or the primary feed. Each server resolves visitor identity independently, so the datasets are self-consistent but their visitor hashes won't line up (expected).
+
 ## Usage
 
 Inject `IFeatureTracker` anywhere in your app to record feature navigation and errors:

@@ -29,6 +29,19 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 ```
 
+### Mirroring to multiple servers
+
+To send the same telemetry to more than one TelemetryForge server (e.g. to trial a new server alongside your current one), add `Mirrors` — each with its own API key. Every payload fans out to the primary plus each mirror concurrently and best-effort, so a slow or unavailable mirror never affects your app or the primary feed:
+
+```csharp
+builder.Services.AddTelemetryForge(options =>
+{
+    options.Endpoint = "https://telemetry.yourdomain.com";
+    options.ApiKey   = "your-site-api-key";
+    options.Mirrors.Add(new("https://new-server.yourdomain.com", "new-server-key"));
+});
+```
+
 ### Conditional Registration
 
 `UseTelemetryForge()` is safe to call even if `AddTelemetryForge()` was never called — the middleware detects the missing service registration, logs a warning, and no-ops. This means you only need to guard the `AddTelemetryForge()` call:

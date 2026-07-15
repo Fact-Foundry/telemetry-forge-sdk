@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+
+- **Multi-server mirroring (Web, Desktop, Api)** — telemetry can now be sent to more than one TelemetryForge server at once. Add `options.Mirrors.Add(new(endpoint, apiKey))` for each additional server alongside the primary `Endpoint`/`ApiKey`. Every payload fans out to the primary plus each mirror **concurrently and best-effort**: a slow or unavailable mirror never blocks or fails the app or the primary feed. Fully backward compatible — no mirrors configured means identical behavior to before. Useful for standing up a new server next to an existing one to compare and seed real data before cutting over
+
+### Internal
+
+- The per-platform `TelemetryForgeHttpClient` changed from a single fixed-`BaseAddress` client to a fan-out over one-or-more targets, using a named resilient `HttpClient` from `IHttpClientFactory` and setting the per-target URL + API key (+ SDK-version header on Api) per request. Constructor signature changed accordingly; unit tests updated and extended to cover the mirror fan-out and failing-mirror isolation
+
 ## [1.1.6] — 2026-06-28
 
 ### Features
