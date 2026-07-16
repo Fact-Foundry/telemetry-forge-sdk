@@ -1,7 +1,7 @@
 # Background telemetry sends (Web + Api packages)
 
-**Status:** proposed — not started. Written 2026-07-14 as a handoff from the
-semantic-modeler-website performance investigation.
+**Status:** implemented. Written 2026-07-14 after a consumer-site
+performance investigation.
 
 ## Problem
 
@@ -10,11 +10,11 @@ telemetry POST **inside the request pipeline, after `_next(context)`**. The resp
 not complete until the telemetry server has answered, so every non-static request in a
 consuming app pays the full telemetry round trip as user-visible latency.
 
-Measured on semanticmodeler.com (2026-07-14, SDK Web 1.1.3 and 1.1.6): every page load
-took ~1.8–2.5s. Server log showed the POST to `https://telemetry.fact-foundry.com/api/telemetry/web`
+Measured on a consumer site (2026-07-14, SDK Web 1.1.3 and 1.1.6): every page load
+took ~1.8–2.5s. Server log showed the telemetry POST
 returning **202 after ~1824ms — a single attempt, no Polly retries** ("Attempt: '0',
 Handled: 'False'"). After decorating `ITelemetryClient` with a fire-and-forget wrapper on
-the website side, the same pages served in **1–4ms** with telemetry still arriving.
+the consumer side, the same pages served in **1–4ms** with telemetry still arriving.
 
 The blocking sites:
 
@@ -100,10 +100,8 @@ Test project: `tests/FactFoundry.TelemetryForge.Tests` (has existing
 
 ## Downstream cleanup after release
 
-`semantic-modeler-website` carries a stopgap: `Services/BackgroundTelemetryClient.cs` plus
-a service-descriptor rewrap of `ITelemetryClient` in `Program.cs` (marked "Remove once the
-SDK sends fire-and-forget itself"). When the site upgrades to the fixed SDK, delete both
-and update that repo's CHANGELOG.
+Any consumer site that added its own fire-and-forget wrapper around `ITelemetryClient` as a
+stopgap should remove it after upgrading to the SDK version that includes background sends.
 
 ## Related, out of scope here
 
