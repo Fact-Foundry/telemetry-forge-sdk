@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 
@@ -28,7 +29,10 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient(TelemetryForgeHttpClient.HttpClientName)
             .AddStandardResilienceHandler();
 
-        services.AddSingleton<ITelemetryClient, TelemetryForgeHttpClient>();
+        services.AddSingleton<TelemetryForgeHttpClient>();
+        services.AddSingleton<QueuedTelemetryClient>();
+        services.AddSingleton<ITelemetryClient>(sp => sp.GetRequiredService<QueuedTelemetryClient>());
+        services.AddHostedService<TelemetrySendWorker>();
 
         return services;
     }

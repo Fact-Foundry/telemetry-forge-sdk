@@ -22,4 +22,10 @@ public abstract class TelemetryOptionsBase
     /// Leave empty (the default) to send to the primary endpoint only.
     /// </summary>
     public IList<TelemetryTarget> Mirrors { get; } = new List<TelemetryTarget>();
+
+    /// <summary>
+    /// Maximum number of telemetry events that can be queued for background delivery.
+    /// When the queue is full, the oldest event is discarded. Default is 1000.
+    /// </summary>
+    public int SendQueueCapacity { get; set; } = 1000;
 }
