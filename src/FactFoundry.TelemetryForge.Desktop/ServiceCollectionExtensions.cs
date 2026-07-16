@@ -18,17 +18,15 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         Action<DesktopTelemetryOptions> configure)
     {
-        var options = new DesktopTelemetryOptions();
-        configure(options);
-
         services.Configure(configure);
 
-        services.AddHttpClient<ITelemetryClient, TelemetryForgeHttpClient>(client =>
-        {
-            client.BaseAddress = new Uri(options.Endpoint.TrimEnd('/'));
-            client.DefaultRequestHeaders.Add("X-TelemetryForge-Key", options.ApiKey);
-        })
-        .AddStandardResilienceHandler();
+        // A single named client carries the resilience policies; TelemetryForgeHttpClient
+        // sets the per-target URL and API key per request so it can fan out to the primary
+        // endpoint plus any configured mirrors.
+        services.AddHttpClient(TelemetryForgeHttpClient.HttpClientName)
+            .AddStandardResilienceHandler();
+
+        services.AddSingleton<ITelemetryClient, TelemetryForgeHttpClient>();
 
         services.AddSingleton<IMachineFingerprint, MachineFingerprint>();
         services.AddSingleton<DesktopSessionTracker>();

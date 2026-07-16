@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+
+- **Background telemetry sends (Web, Api)** — telemetry payloads are now queued in-process and sent by a background worker instead of blocking the HTTP response pipeline. Every middleware and circuit handler send returns immediately; the server round trip no longer adds latency to user-facing requests. Bounded queue with configurable capacity (`SendQueueCapacity`, default 1000) drops oldest events under backpressure. Remaining events are drained on shutdown (5-second cap). No API changes — `AddTelemetryForge()` / `AddTelemetryForgeApi()` register the worker automatically
+- **Multi-server mirroring (Web, Desktop, Api)** — telemetry can now be sent to more than one TelemetryForge server at once. Add `options.Mirrors.Add(new(endpoint, apiKey))` for each additional server alongside the primary `Endpoint`/`ApiKey`. Every payload fans out to the primary plus each mirror **concurrently and best-effort**: a slow or unavailable mirror never blocks or fails the app or the primary feed. Fully backward compatible — no mirrors configured means identical behavior to before. Useful for standing up a new server next to an existing one to compare and seed real data before cutting over
+
+### Internal
+
+- The per-platform `TelemetryForgeHttpClient` changed from a single fixed-`BaseAddress` client to a fan-out over one-or-more targets, using a named resilient `HttpClient` from `IHttpClientFactory` and setting the per-target URL + API key (+ SDK-version header on Api) per request. Constructor signature changed accordingly; unit tests updated and extended to cover the mirror fan-out and failing-mirror isolation
+
 ## [1.1.6] — 2026-06-28
 
 ### Features
@@ -23,7 +34,7 @@
 ### Fixes
 
 - Desktop: flush pending telemetry before setting disposed flag — prevents final flush from being silently skipped on shutdown
-- Desktop: OS version now reported via shared `OsInfo` helper (friendly name + kernel) instead of `Environment.OSVersion.ToString()` — gives "macOS 14.5", Linux distro PRETTY_NAME, and Windows marketing name instead of "Unix 26.4.0"; matches the Semantic Modeler licensing service format
+- Desktop: OS version now reported via shared `OsInfo` helper (friendly name + kernel) instead of `Environment.OSVersion.ToString()` — gives "macOS 14.5", Linux distro PRETTY_NAME, and Windows marketing name instead of "Unix 26.4.0"
 
 ### Docs
 

@@ -1,6 +1,6 @@
-using System.Reflection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 
@@ -21,40 +21,20 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         Action<ApiTelemetryOptions> configure)
     {
-        var options = new ApiTelemetryOptions();
-        configure(options);
-
         services.Configure(configure);
 
-        services.AddHttpClient<ITelemetryClient, TelemetryForgeHttpClient>(client =>
-        {
-            client.BaseAddress = new Uri(options.Endpoint.TrimEnd('/'));
-            client.DefaultRequestHeaders.Add("X-TelemetryForge-Key", options.ApiKey);
-            client.DefaultRequestHeaders.Add("X-TelemetryForge-Sdk-Version", SdkVersion);
-        })
-        .AddStandardResilienceHandler();
+        // A single named client carries the resilience policies; TelemetryForgeHttpClient
+        // sets the per-target URL, API key, and SDK-version header per request so it can fan
+        // out to the primary endpoint plus any configured mirrors.
+        services.AddHttpClient(TelemetryForgeHttpClient.HttpClientName)
+            .AddStandardResilienceHandler();
+
+        services.AddSingleton<TelemetryForgeHttpClient>();
+        services.AddSingleton<QueuedTelemetryClient>();
+        services.AddSingleton<ITelemetryClient>(sp => sp.GetRequiredService<QueuedTelemetryClient>());
+        services.AddHostedService<TelemetrySendWorker>();
 
         return services;
-    }
-
-    /// <summary>
-    /// This SDK's version, read once from the assembly's informational version (build
-    /// metadata after '+' stripped). Sent as a header on every telemetry post so the server
-    /// can record which SDK version each app is running, without any per-event cost.
-    /// </summary>
-    private static readonly string SdkVersion = ResolveSdkVersion();
-
-    private static string ResolveSdkVersion()
-    {
-        var informational = typeof(ServiceCollectionExtensions).Assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
-        if (!string.IsNullOrEmpty(informational))
-        {
-            var plus = informational.IndexOf('+');
-            return plus >= 0 ? informational[..plus] : informational;
-        }
-
-        return typeof(ServiceCollectionExtensions).Assembly.GetName().Version?.ToString() ?? "unknown";
     }
 
     /// <summary>

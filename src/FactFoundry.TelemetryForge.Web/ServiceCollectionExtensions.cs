@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 
@@ -21,17 +22,18 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         Action<WebTelemetryOptions> configure)
     {
-        var options = new WebTelemetryOptions();
-        configure(options);
-
         services.Configure(configure);
 
-        services.AddHttpClient<ITelemetryClient, TelemetryForgeHttpClient>(client =>
-        {
-            client.BaseAddress = new Uri(options.Endpoint.TrimEnd('/'));
-            client.DefaultRequestHeaders.Add("X-TelemetryForge-Key", options.ApiKey);
-        })
-        .AddStandardResilienceHandler();
+        // A single named client carries the resilience policies; TelemetryForgeHttpClient
+        // sets the per-target URL and API key per request so it can fan out to the primary
+        // endpoint plus any configured mirrors.
+        services.AddHttpClient(TelemetryForgeHttpClient.HttpClientName)
+            .AddStandardResilienceHandler();
+
+        services.AddSingleton<TelemetryForgeHttpClient>();
+        services.AddSingleton<QueuedTelemetryClient>();
+        services.AddSingleton<ITelemetryClient>(sp => sp.GetRequiredService<QueuedTelemetryClient>());
+        services.AddHostedService<TelemetrySendWorker>();
 
         services.AddHttpContextAccessor();
         services.AddSingleton<RequestContextAccessor>();
